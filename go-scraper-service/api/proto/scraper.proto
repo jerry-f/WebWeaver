@@ -1,0 +1,64 @@
+syntax = "proto3";
+
+package scraper;
+
+option go_package = "github.com/newsflow/go-scraper-service/api/proto";
+
+// 抓取服务
+service ScraperService {
+  // 抓取单个文章
+  rpc FetchArticle(FetchRequest) returns (FetchResponse);
+
+  // 批量抓取
+  rpc FetchArticles(stream FetchRequest) returns (stream FetchResponse);
+
+  // 健康检查
+  rpc HealthCheck(Empty) returns (HealthResponse);
+}
+
+message Empty {}
+
+message FetchRequest {
+  string url = 1;
+  FetchOptions options = 2;
+}
+
+message FetchOptions {
+  int32 timeout_ms = 1;
+  bool extract_fulltext = 2;
+  bool process_images = 3;
+  string image_proxy_base = 4;
+  map<string, string> headers = 5;
+  string strategy = 6; // cycletls, standard, auto
+  string referer = 7;
+}
+
+message FetchResponse {
+  string url = 1;
+  string final_url = 2;
+  string title = 3;
+  string content = 4;
+  string text_content = 5;
+  string excerpt = 6;
+  string byline = 7;
+  string site_name = 8;
+  repeated Image images = 9;
+  int32 reading_time = 10;
+  string strategy = 11;
+  int64 duration_ms = 12;
+  string error = 13;
+}
+
+message Image {
+  string original_url = 1;
+  string proxy_url = 2;
+  string alt = 3;
+  bool is_lazy = 4;
+}
+
+message HealthResponse {
+  string status = 1;
+  int32 max_concurrent = 2;
+  int32 available = 3;
+  bool cycletls_enabled = 4;
+}

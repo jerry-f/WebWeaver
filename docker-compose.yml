@@ -67,5 +67,79 @@ services:
       timeout: 5s
       retries: 3
 
+  # Go 抓取服务
+  # 高性能 HTTP 抓取 + 正文提取
+  # HTTP: http://localhost:8088
+  go-scraper:
+    build: ./go-scraper-service
+    container_name: newsflow-go-scraper
+    environment:
+      - HTTP_PORT=8080
+      - MAX_CONCURRENT=100
+      - REQUEST_TIMEOUT_MS=15000
+      - BROWSERLESS_URL=http://browserless:3000
+    ports:
+      - "8088:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    depends_on:
+      - browserless
+
+  # imgproxy 图片代理服务
+  # 高性能图片处理：防盗链绕过、格式转换（WebP/AVIF）、缩放
+  # HTTP: http://localhost:8889
+  imgproxy:
+    image: darthsim/imgproxy:latest
+    container_name: newsflow-imgproxy
+    environment:
+      # 绑定地址
+      - IMGPROXY_BIND=:8080
+      # 签名密钥（生产环境需更换）
+      - IMGPROXY_KEY=${IMGPROXY_KEY:-736563726574}
+      - IMGPROXY_SALT=${IMGPROXY_SALT:-73616c74}
+      # 允许不安全的 URL（开发环境）
+      - IMGPROXY_ALLOW_INSECURE_URL=true
+      # 启用 ETag 缓存
+      - IMGPROXY_USE_ETAG=true
+      # 缓存控制透传
+      - IMGPROXY_CACHE_CONTROL_PASSTHROUGH=true
+      # 最大源图片大小 (10MB)
+      - IMGPROXY_MAX_SRC_FILE_SIZE=10485760
+      # 默认质量
+      - IMGPROXY_QUALITY=80
+      # 启用 WebP/AVIF 自动检测
+      - IMGPROXY_ENABLE_WEBP_DETECTION=true
+      - IMGPROXY_ENABLE_AVIF_DETECTION=true
+      # 自定义 User-Agent（防盗链绕过）
+      - IMGPROXY_USER_AGENT=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+      # 设置超时
+      - IMGPROXY_READ_TIMEOUT=10
+      - IMGPROXY_WRITE_TIMEOUT=10
+      - IMGPROXY_DOWNLOAD_TIMEOUT=10
+    ports:
+      - "8889:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+        reservations:
+          memory: 64M
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "imgproxy", "health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 volumes:
   redis-data:

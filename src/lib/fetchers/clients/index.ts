@@ -39,3 +39,26 @@ export {
   type PipelineConfig,
   type PipelineResult
 } from './pipeline'
+
+// Go 抓取服务客户端
+export {
+  GoScraperClient,
+  getGoScraperClient,
+  fetchWithGoScraper,
+  checkGoScraperHealth,
+  type GoScraperConfig,
+  type GoScraperRequest,
+  type GoScraperResponse,
+  type GoBatchResponse,
+  type GoHealthResponse
+} from './go-scraper'
+
+// imgproxy 图片代理客户端
+export {
+  ImgproxyClient,
+  getImgproxyClient,
+  imgproxyUrl,
+  thumbnailUrl,
+  type ImgproxyConfig,
+  type ImageOptions
+} from './imgproxy'
