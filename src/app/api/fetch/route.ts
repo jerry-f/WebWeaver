@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
-import { fetchAllSources, fetchSource } from "@/lib/fetcher";
+import { fetchAllSources, fetchSource } from "@/lib/fetchers";
 
 // 触发抓取
 export async function POST(req: Request) {
@@ -22,8 +22,8 @@ export async function POST(req: Request) {
       results = await fetchAllSources();
     }
 
-    const totalNew = results.reduce((sum, r) => sum + r.newArticles, 0);
-    const errors = results.filter((r) => r.error);
+    const totalNew = results.reduce((sum, r) => sum + r.added, 0);
+    const errors = results.filter((r) => r.errors.length > 0);
 
     return NextResponse.json({
       message: `抓取完成，共获取 ${totalNew} 篇新文章`,

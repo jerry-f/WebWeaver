@@ -112,6 +112,7 @@ export async function fetchSource(sourceId: string): Promise<{ added: number; er
           author: article.author,         // 作者
           publishedAt: article.publishedAt, // 发布时间
           readingTime,                    // 预计阅读时间（分钟）
+          category: source?.category || null,      // 从信息源继承分类
           summaryStatus: 'pending'        // AI 摘要状态：待生成
         },
         update: {} // 已存在的文章不做任何更新
