@@ -8,34 +8,50 @@ datasource db {
 }
 
 model Source {
-  id        String   @id @default(cuid())
-  name      String
-  type      String   // rss, api, scrape
-  url       String
-  config    String?  // JSON config for API keys, selectors, etc.
-  enabled   Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  articles  Article[]
+  id            String   @id @default(cuid())
+  name          String
+  type          String   // rss, api, scrape
+  url           String
+  config        String?  // JSON config for API keys, selectors, etc.
+  enabled       Boolean  @default(true)
+  fetchFullText Boolean  @default(false)  // 是否抓取全文
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  articles      Article[]
 }
 
 model Article {
-  id          String   @id @default(cuid())
-  sourceId    String
-  source      Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
-  externalId  String?  // Original ID from source
-  title       String
-  content     String?
-  summary     String?
-  url         String
-  imageUrl    String?
-  author      String?
-  publishedAt DateTime?
-  fetchedAt   DateTime @default(now())
-  read        Boolean  @default(false)
-  starred     Boolean  @default(false)
-  
+  id            String   @id @default(cuid())
+  sourceId      String
+  source        Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  externalId    String?  // Original ID from source
+  title         String
+  content       String?
+  summary       String?
+  url           String
+  imageUrl      String?
+  author        String?
+  publishedAt   DateTime?
+  fetchedAt     DateTime @default(now())
+  read          Boolean  @default(false)
+  starred       Boolean  @default(false)
+  tags          String?  // JSON: ["tech", "ai"]
+  category      String?  // 分类
+  readingTime   Int?     // 阅读时间（分钟）
+  summaryStatus String   @default("pending")  // pending/processing/completed/failed
+
   @@unique([sourceId, externalId])
   @@index([publishedAt])
   @@index([read])
+  @@index([summaryStatus])
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String?
+  role      String   @default("user")  // user, admin
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
