@@ -12,6 +12,7 @@ model Source {
   name          String
   type          String   // rss, api, scrape
   url           String
+  category      String?  // 分类：tech, ai, frontend, backend, investment 等
   config        String?  // JSON config for API keys, selectors, etc.
   enabled       Boolean  @default(true)
   fetchFullText Boolean  @default(false)  // 是否抓取全文
