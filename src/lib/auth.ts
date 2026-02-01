@@ -1,8 +1,8 @@
-import NextAuth, { DefaultSession } from "next-auth";
+import { getServerSession } from "next-auth";
+import type { NextAuthOptions, DefaultSession } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { PrismaAdapter } from "@auth/prisma-adapter";
 import bcrypt from "bcryptjs";
-import prisma from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 
 declare module "next-auth" {
   interface Session extends DefaultSession {
@@ -13,15 +13,7 @@ declare module "next-auth" {
   }
 }
 
-interface UserWithRole {
-  id: string;
-  email: string;
-  name: string | null;
-  role: string;
-}
-
-export const { handlers, signIn, signOut, auth } = NextAuth({
-  adapter: PrismaAdapter(prisma) as never,
+export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
@@ -68,16 +60,20 @@ export const { handlers, signIn, signOut, auth } = NextAuth({
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
-        token.role = (user as unknown as UserWithRole).role;
+        token.role = (user as unknown as { role: string }).role;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
-        session.user.id = token.id as string;
-        session.user.role = token.role as string;
+        (session.user as { id: string }).id = token.id as string;
+        (session.user as { role: string }).role = token.role as string;
       }
       return session;
     },
   },
-});
+};
+
+export async function auth() {
+  return getServerSession(authOptions);
+}

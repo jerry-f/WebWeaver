@@ -1,4 +1,4 @@
-import prisma from "../src/lib/prisma";
+import { prisma } from "../src/lib/prisma";
 
 const defaultSources = [
   // 科技 & AI
@@ -100,7 +100,7 @@ async function seed() {
   // 添加默认信息源
   for (const source of defaultSources) {
     try {
-      const existing = await prisma.source.findUnique({
+      const existing = await prisma.source.findFirst({
         where: { url: source.url },
       });
 

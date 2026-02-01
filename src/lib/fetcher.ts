@@ -1,5 +1,5 @@
 import Parser from "rss-parser";
-import prisma from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 
 const parser = new Parser({
   timeout: 10000,
@@ -37,7 +37,7 @@ export async function fetchSource(sourceId: string): Promise<FetchResult> {
       if (!item.link) continue;
 
       // 检查文章是否已存在
-      const existing = await prisma.article.findUnique({
+      const existing = await prisma.article.findFirst({
         where: { url: item.link },
       });
 
@@ -59,12 +59,11 @@ export async function fetchSource(sourceId: string): Promise<FetchResult> {
       newArticles++;
     }
 
-    // 更新源的最后抓取时间
+    // 更新源的更新时间
     await prisma.source.update({
       where: { id: source.id },
       data: {
-        lastFetch: new Date(),
-        errorCount: 0,
+        updatedAt: new Date(),
       },
     });
 
@@ -76,13 +75,8 @@ export async function fetchSource(sourceId: string): Promise<FetchResult> {
   } catch (error) {
     console.error(`Error fetching ${source.name}:`, error);
 
-    // 更新错误计数
-    await prisma.source.update({
-      where: { id: source.id },
-      data: {
-        errorCount: { increment: 1 },
-      },
-    });
+    // 记录错误日志
+    console.error(`Fetch error for source ${source.id}:`, error);
 
     return {
       sourceId: source.id,
