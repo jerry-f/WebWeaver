@@ -22,7 +22,7 @@ export async function fetchFullText(url: string): Promise<{ content: string; tit
     
     return {
       content: article.textContent.trim(),
-      title: article.title
+      title: article.title || undefined
     }
   } catch (e) {
     console.error('Failed to fetch full text:', url, e)
