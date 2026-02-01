@@ -84,6 +84,9 @@ export async function generateSummary(title: string, content: string): Promise<S
 
     // ========== 解析 AI 响应 ==========
     const resultText = response.choices[0]?.message?.content
+    if(process.env.IN_DEBUG) {
+      console.log('响应：', resultText)
+    }
     if (!resultText) {
       return null
     }

@@ -5,6 +5,7 @@ import { useRouter, useParams } from 'next/navigation'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { cn, timeAgo } from '@/lib/utils'
+import ArticleCompare from '@/components/article-compare'
 import {
   X,
   Star,
@@ -16,7 +17,8 @@ import {
   PanelLeftClose,
   Clock,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  RefreshCw
 } from 'lucide-react'
 
 interface Source {
@@ -40,6 +42,17 @@ interface Article {
   source: Source
 }
 
+interface ArticleVersion {
+  title: string
+  content: string | null
+  summary: string | null
+  tags: string | null
+  category: string | null
+  imageUrl: string | null
+  author: string | null
+  publishedAt: string | null
+}
+
 export default function ArticleDetailPage() {
   const router = useRouter()
   const params = useParams()
@@ -52,6 +65,11 @@ export default function ArticleDetailPage() {
   const [contentLoading, setContentLoading] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(-1)
+  const [refreshing, setRefreshing] = useState(false)
+  const [compareData, setCompareData] = useState<{
+    oldVersion: ArticleVersion;
+    newVersion: ArticleVersion;
+  } | null>(null)
 
   const listRef = useRef<HTMLDivElement>(null)
 
@@ -140,6 +158,30 @@ export default function ArticleDetailPage() {
     setArticles(prev => prev.map(a => a.id === article.id ? { ...a, starred: newStarred } : a))
   }, [article])
 
+  // 刷新文章内容（重新抓取并对比）
+  const refreshArticle = useCallback(async () => {
+    if (!article || refreshing) return
+    setRefreshing(true)
+    try {
+      const res = await fetch(`/api/articles/${article.id}/refresh`, { method: 'POST' })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) {
+          setCompareData({
+            oldVersion: data.oldVersion,
+            newVersion: data.newVersion,
+          })
+          // 更新当前文章
+          setArticle(data.article)
+        }
+      }
+    } catch (e) {
+      console.error('刷新文章失败:', e)
+    } finally {
+      setRefreshing(false)
+    }
+  }, [article, refreshing])
+
   // 返回列表
   const goBack = useCallback(() => {
     router.push('/articles')
@@ -187,6 +229,10 @@ export default function ArticleDetailPage() {
           e.preventDefault()
           if (article) window.open(article.url, '_blank')
           break
+        case 'r':
+          e.preventDefault()
+          refreshArticle()
+          break
         case 'j':
           e.preventDefault()
           goNext()
@@ -204,7 +250,7 @@ export default function ArticleDetailPage() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [article, goBack, toggleRead, toggleStarred, goNext, goPrev])
+  }, [article, goBack, toggleRead, toggleStarred, goNext, goPrev, refreshArticle])
 
   // 滚动到当前文章
   useEffect(() => {
@@ -245,7 +291,18 @@ export default function ArticleDetailPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-3.5rem)] -m-4 lg:-m-6 overflow-hidden">
+    <>
+      {/* 对比视图 */}
+      {compareData && (
+        <ArticleCompare
+          oldVersion={compareData.oldVersion}
+          newVersion={compareData.newVersion}
+          onClose={() => setCompareData(null)}
+          onAccept={() => setCompareData(null)}
+        />
+      )}
+
+      <div className="flex h-[calc(100vh-3.5rem)] -m-4 lg:-m-6 overflow-hidden">
       {/* 侧边栏 - 文章列表（默认收起） */}
       <div className={cn(
         "flex-shrink-0 border-r border-border bg-card overflow-hidden transition-all duration-300 ease-in-out",
@@ -391,6 +448,18 @@ export default function ArticleDetailPage() {
               <span className="ml-1 text-xs">原文</span>
               <kbd className="ml-1 text-xs bg-muted px-1 py-0.5 rounded">v</kbd>
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={refreshArticle}
+              disabled={refreshing}
+              className="text-muted-foreground hover:text-primary"
+              title="刷新文章内容"
+            >
+              <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin")} />
+              <span className="ml-1 text-xs">刷新</span>
+              <kbd className="ml-1 text-xs bg-muted px-1 py-0.5 rounded">r</kbd>
+            </Button>
           </div>
         </div>
 
@@ -479,11 +548,13 @@ export default function ArticleDetailPage() {
               <span className="ml-3">m 切换已读</span>
               <span className="ml-3">s 切换收藏</span>
               <span className="ml-3">v 打开原文</span>
+              <span className="ml-3">r 刷新内容</span>
               <span className="ml-3">b 切换列表</span>
             </div>
           </div>
         </article>
       </div>
     </div>
+    </>
   )
 }
