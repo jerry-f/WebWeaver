@@ -2,24 +2,12 @@
 
 import { useEffect, useState, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { cn, timeAgo } from '@/lib/utils'
+import { Loader2 } from 'lucide-react'
 import ArticleCompare from '@/components/article-compare'
-import {
-  X,
-  Star,
-  BookOpen,
-  BookOpenCheck,
-  ExternalLink,
-  Loader2,
-  PanelLeft,
-  PanelLeftClose,
-  Clock,
-  ChevronUp,
-  ChevronDown,
-  RefreshCw
-} from 'lucide-react'
+import ArticleSidebar from './components/article-sidebar'
+import ArticleToolbar from './components/article-toolbar'
+import ArticleContent from './components/article-content'
 
 interface Source {
   id?: string
@@ -125,13 +113,6 @@ export default function ArticleDetailPage() {
     }
   }, [article])
 
-  // 自动获取全文（如果内容较短）
-  useEffect(() => {
-    if (article && (!article.content || article.content.length < 500)) {
-      fetchFullContent()
-    }
-  }, [article?.id])
-
   // 切换已读状态
   const toggleRead = useCallback(async () => {
     if (!article) return
@@ -171,7 +152,6 @@ export default function ArticleDetailPage() {
             oldVersion: data.oldVersion,
             newVersion: data.newVersion,
           })
-          // 更新当前文章
           setArticle(data.article)
         }
       }
@@ -260,18 +240,6 @@ export default function ArticleDetailPage() {
     }
   }, [sidebarOpen, currentIndex])
 
-  // 格式化日期
-  const formatDate = (dateStr?: string) => {
-    if (!dateStr) return ''
-    return new Date(dateStr).toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    })
-  }
-
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-3.5rem)] text-muted-foreground">
@@ -303,258 +271,51 @@ export default function ArticleDetailPage() {
       )}
 
       <div className="flex h-[calc(100vh-3.5rem)] -m-4 lg:-m-6 overflow-hidden">
-      {/* 侧边栏 - 文章列表（默认收起） */}
-      <div className={cn(
-        "flex-shrink-0 border-r border-border bg-card overflow-hidden transition-all duration-300 ease-in-out",
-        sidebarOpen ? "w-80" : "w-0 border-r-0"
-      )}>
-        <div className={cn(
-          "w-80 h-full flex flex-col transition-opacity duration-200",
-          sidebarOpen ? "opacity-100" : "opacity-0"
-        )}>
-          {/* 侧边栏头部 */}
-          <div className="p-3 border-b border-border flex items-center justify-between">
-            <span className="text-sm font-medium">文章列表</span>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSidebarOpen(false)}
-              className="h-7 w-7 p-0"
-            >
-              <PanelLeftClose className="w-4 h-4" />
-            </Button>
-          </div>
+        {/* 侧边栏 - 文章列表 */}
+        <ArticleSidebar
+          articles={articles}
+          currentArticleId={articleId}
+          sidebarOpen={sidebarOpen}
+          onClose={() => setSidebarOpen(false)}
+          onNavigate={navigateToArticle}
+          listRef={listRef}
+        />
 
-          {/* 文章列表 */}
-          <div ref={listRef} className="flex-1 overflow-auto">
-            {articles.map((a, index) => (
-              <div
-                key={a.id}
-                onClick={() => navigateToArticle(a.id)}
-                className={cn(
-                  "px-3 py-2.5 border-b border-border/30 cursor-pointer transition-all duration-150",
-                  a.read && "opacity-50",
-                  a.id === articleId && "bg-primary/10 border-l-2 border-l-primary",
-                  a.id !== articleId && "hover:bg-muted/30"
-                )}
-              >
-                <h4 className={cn(
-                  "text-sm font-medium line-clamp-2 mb-1",
-                  a.id === articleId ? "text-primary" : "text-foreground"
-                )}>
-                  {a.title}
-                </h4>
-                <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                  <span>{a.source.name}</span>
-                  <span>·</span>
-                  <span>{timeAgo(a.fetchedAt || a.publishedAt || '')}</span>
-                </div>
-              </div>
-            ))}
-          </div>
+        {/* 主内容区 */}
+        <div className="flex-1 min-w-0 overflow-hidden flex flex-col bg-card">
+          {/* 顶部工具栏 */}
+          <ArticleToolbar
+            sourceName={article.source.name}
+            starred={article.starred}
+            read={article.read}
+            refreshing={refreshing}
+            sidebarOpen={sidebarOpen}
+            canGoPrev={currentIndex > 0}
+            canGoNext={currentIndex < articles.length - 1}
+            onBack={goBack}
+            onToggleSidebar={() => setSidebarOpen(true)}
+            onToggleStarred={toggleStarred}
+            onToggleRead={toggleRead}
+            onOpenOriginal={() => window.open(article.url, '_blank')}
+            onRefresh={refreshArticle}
+            onGoPrev={goPrev}
+            onGoNext={goNext}
+          />
+
+          {/* 文章内容 */}
+          <ArticleContent
+            title={article.title}
+            content={article.content}
+            summary={article.summary}
+            author={article.author}
+            publishedAt={article.publishedAt}
+            url={article.url}
+            imageUrl={article.imageUrl}
+            contentLoading={contentLoading}
+            onFetchFullContent={fetchFullContent}
+          />
         </div>
       </div>
-
-      {/* 主内容区 */}
-      <div className="flex-1 min-w-0 overflow-hidden flex flex-col bg-card">
-        {/* 顶部工具栏 */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-10">
-          <div className="flex items-center gap-2">
-            {/* 展开侧边栏按钮 */}
-            {!sidebarOpen && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setSidebarOpen(true)}
-                className="h-8 w-8 p-0"
-                title="显示文章列表 (B)"
-              >
-                <PanelLeft className="w-4 h-4" />
-              </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={goBack}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <X className="w-4 h-4 mr-1" />
-              返回
-              <kbd className="ml-2 text-xs bg-muted px-1.5 py-0.5 rounded">Esc</kbd>
-            </Button>
-            <Badge variant="secondary" className="font-normal">
-              {article.source.name}
-            </Badge>
-          </div>
-
-          <div className="flex items-center gap-1">
-            {/* 上一篇/下一篇 */}
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={goPrev}
-              disabled={currentIndex <= 0}
-              className="h-8 w-8 p-0"
-              title="上一篇 (K)"
-            >
-              <ChevronUp className="w-4 h-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={goNext}
-              disabled={currentIndex >= articles.length - 1}
-              className="h-8 w-8 p-0"
-              title="下一篇 (J)"
-            >
-              <ChevronDown className="w-4 h-4" />
-            </Button>
-
-            <div className="w-px h-4 bg-border mx-1" />
-
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={toggleStarred}
-              className={cn(
-                "transition-colors",
-                article.starred ? "text-amber-500 hover:text-amber-600" : "text-muted-foreground hover:text-amber-500"
-              )}
-            >
-              <Star className={cn("w-4 h-4", article.starred && "fill-current")} />
-              <kbd className="ml-1 text-xs bg-muted px-1 py-0.5 rounded">s</kbd>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={toggleRead}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              {article.read ? (
-                <BookOpenCheck className="w-4 h-4" />
-              ) : (
-                <BookOpen className="w-4 h-4" />
-              )}
-              <span className="ml-1 text-xs">{article.read ? '已读' : '未读'}</span>
-              <kbd className="ml-1 text-xs bg-muted px-1 py-0.5 rounded">m</kbd>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => window.open(article.url, '_blank')}
-              className="text-muted-foreground hover:text-primary"
-            >
-              <ExternalLink className="w-4 h-4" />
-              <span className="ml-1 text-xs">原文</span>
-              <kbd className="ml-1 text-xs bg-muted px-1 py-0.5 rounded">v</kbd>
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={refreshArticle}
-              disabled={refreshing}
-              className="text-muted-foreground hover:text-primary"
-              title="刷新文章内容"
-            >
-              <RefreshCw className={cn("w-4 h-4", refreshing && "animate-spin")} />
-              <span className="ml-1 text-xs">刷新</span>
-              <kbd className="ml-1 text-xs bg-muted px-1 py-0.5 rounded">r</kbd>
-            </Button>
-          </div>
-        </div>
-
-        {/* 文章内容 */}
-        <article className="flex-1 overflow-auto">
-          <div className="max-w-3xl mx-auto px-6 py-8">
-            {/* 标题 */}
-            <h1 className="text-2xl md:text-3xl font-serif font-bold text-foreground leading-tight mb-4">
-              {article.title}
-            </h1>
-
-            {/* 元信息 */}
-            <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground mb-6 pb-6 border-b border-border">
-              {article.author && (
-                <span className="font-medium">{article.author}</span>
-              )}
-              {article.publishedAt && (
-                <span>{formatDate(article.publishedAt)}</span>
-              )}
-              <a
-                href={article.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-primary hover:underline inline-flex items-center gap-1"
-              >
-                查看原文
-                <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-
-            {/* 封面图 */}
-            {article.imageUrl && (
-              <div className="mb-6 rounded-lg overflow-hidden bg-muted">
-                <img
-                  src={article.imageUrl}
-                  alt=""
-                  className="w-full h-auto max-h-80 object-contain"
-                  onError={(e) => {
-                    (e.currentTarget.parentElement as HTMLElement).style.display = 'none'
-                  }}
-                />
-              </div>
-            )}
-
-            {/* 加载状态 */}
-            {contentLoading && (
-              <div className="flex items-center gap-2 text-muted-foreground mb-4 p-4 bg-muted/30 rounded-lg">
-                <Loader2 className="w-4 h-4 animate-spin" />
-                正在加载全文...
-              </div>
-            )}
-
-            {/* 正文内容 */}
-            <div
-              className="prose prose-neutral dark:prose-invert max-w-none
-                prose-headings:font-serif prose-headings:text-foreground
-                prose-p:text-foreground prose-p:leading-relaxed
-                prose-a:text-primary prose-a:no-underline hover:prose-a:underline
-                prose-strong:text-foreground
-                prose-code:text-primary prose-code:bg-muted prose-code:px-1 prose-code:rounded
-                prose-pre:bg-muted prose-pre:border prose-pre:border-border
-                prose-blockquote:border-l-primary prose-blockquote:text-muted-foreground
-                prose-img:rounded-lg"
-              dangerouslySetInnerHTML={{
-                __html: article.content || article.summary || '<p class="text-muted-foreground">暂无内容</p>'
-              }}
-            />
-
-            {/* 获取全文按钮 */}
-            {article.content && article.content.length < 300 && !contentLoading && (
-              <Button
-                onClick={fetchFullContent}
-                variant="outline"
-                className="mt-6"
-              >
-                <Loader2 className="w-4 h-4 mr-2" />
-                尝试获取全文
-              </Button>
-            )}
-
-            {/* 快捷键提示 */}
-            <div className="mt-12 pt-6 border-t border-border text-xs text-muted-foreground">
-              <span className="font-medium">快捷键：</span>
-              <span className="ml-2">Esc 返回</span>
-              <span className="ml-3">j/k 上下篇</span>
-              <span className="ml-3">m 切换已读</span>
-              <span className="ml-3">s 切换收藏</span>
-              <span className="ml-3">v 打开原文</span>
-              <span className="ml-3">r 刷新内容</span>
-              <span className="ml-3">b 切换列表</span>
-            </div>
-          </div>
-        </article>
-      </div>
-    </div>
     </>
   )
 }
