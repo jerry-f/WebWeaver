@@ -67,7 +67,7 @@ export default function DashboardLayout({
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 transform bg-sidebar border-r border-sidebar-border shadow-xl transition-all duration-300 ease-out lg:translate-x-0",
+          "fixed inset-y-0 left-0 z-50 transform bg-sidebar border-r border-sidebar-border transition-all duration-300 ease-out lg:translate-x-0",
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
           sidebarCollapsed ? "lg:w-16" : "lg:w-64",
           "w-64"
@@ -75,7 +75,7 @@ export default function DashboardLayout({
       >
         {/* Logo */}
         <div className={cn(
-          "flex h-16 items-center border-b border-sidebar-border transition-all duration-300",
+          "flex h-14 items-center border-b border-sidebar-border transition-all duration-300",
           sidebarCollapsed ? "justify-center px-2" : "justify-between px-6"
         )}>
           <Link href="/dashboard" className="flex items-center space-x-3 group">

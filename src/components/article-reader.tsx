@@ -129,8 +129,8 @@ export function ArticleReader({ article: initialArticle, onClose, onUpdate }: Ar
 
   return (
     <div className="h-full flex flex-col bg-card border-l border-border">
-      {/* 顶部工具栏 */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-10">
+      {/* 顶部工具栏 - 与全局导航栏保持相同高度 h-14 */}
+      <div className="h-14 flex items-center justify-between px-6 border-b border-border bg-card/80 backdrop-blur-sm sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
