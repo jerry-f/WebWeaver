@@ -145,5 +145,31 @@ services:
       timeout: 10s
       retries: 3
 
+  # Varnish 缓存层（放在 imgproxy 前面，C 级性能）
+  # HTTP: http://localhost:8889
+  varnish:
+    image: varnish:stable
+    container_name: newsflow-varnish
+    ports:
+      - "8889:80"
+    volumes:
+      - ./config/varnish.vcl:/etc/varnish/default.vcl:ro
+    environment:
+      - VARNISH_SIZE=256M
+    depends_on:
+      - imgproxy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "varnishstat", "-1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 volumes:
   redis-data:

@@ -20,6 +20,10 @@ model Source {
   updatedAt     DateTime @updatedAt
   articles      Article[]
   subscriptions Subscription[]
+
+  // 认证关联（可选）
+  credentialId  String?
+  credential    SiteCredential? @relation(fields: [credentialId], references: [id])
 }
 
 model Article {
@@ -47,6 +51,7 @@ model Article {
   fetchDuration Int?     // 抓取耗时（毫秒）
   readHistory   ReadHistory[]
   bookmarks     Bookmark[]
+  images        ArticleImage[]
 
   @@unique([sourceId, externalId])
   @@index([publishedAt])
@@ -69,6 +74,7 @@ model User {
   bookmarks     Bookmark[]
   pushConfigs   PushConfig[]
   verificationCodes VerificationCode[]
+  credentials   SiteCredential[]
 }
 
 // 验证码
@@ -167,4 +173,62 @@ model DailyStat {
   usersCount    Int      @default(0)
   pushCount     Int      @default(0)
   createdAt     DateTime @default(now())
+}
+
+// 文章图片
+model ArticleImage {
+  id          String   @id @default(cuid())
+  articleId   String
+  article     Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  originalUrl String
+  proxyUrl    String?
+  localPath   String?
+  alt         String?
+  status      String   @default("pending") // pending/cached/failed
+  createdAt   DateTime @default(now())
+
+  @@unique([articleId, originalUrl])
+}
+
+// 站点认证凭证
+model SiteCredential {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 站点标识
+  domain          String    // 域名，如 "medium.com"
+  name            String?   // 显示名称
+
+  // 认证方式
+  authType        String    // 'cookie' | 'login' | 'token'
+
+  // 加密存储的凭证（AES-256-GCM）
+  encryptedCookie     String?
+  encryptedUsername   String?
+  encryptedPassword   String?
+  encryptedToken      String?
+
+  // 登录配置
+  loginUrl            String?
+  loginSelectors      String? // JSON
+
+  // 状态追踪
+  status          String    @default("active") // active/expired/error
+  lastUsedAt      DateTime?
+  lastRefreshedAt DateTime?
+  expiresAt       DateTime?
+  errorMessage    String?
+
+  // 刷新配置
+  refreshInterval String    @default("weekly") // daily/weekly/manual
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  sources         Source[]
+
+  @@unique([userId, domain])
+  @@index([status])
+  @@index([expiresAt])
 }
