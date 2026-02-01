@@ -102,7 +102,13 @@ export default function DashboardLayout({
           sidebarCollapsed ? "px-2" : "px-3"
         )}>
           {allNavigation.map((item) => {
-            const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+            // 特殊处理：如果有子路由在导航中，父路由只匹配精确路径
+            const hasChildInNav = allNavigation.some(
+              nav => nav.href !== item.href && nav.href.startsWith(item.href + '/')
+            );
+            const isActive = hasChildInNav
+              ? pathname === item.href
+              : pathname === item.href || pathname.startsWith(item.href + '/');
             return (
               <Link
                 key={item.name}
@@ -160,7 +166,7 @@ export default function DashboardLayout({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                onClick={() => signOut({ callbackUrl: "/login" })}
+                onClick={() => signOut({ callbackUrl: `${window.location.origin}/login` })}
                 title="退出登录"
               >
                 <LogOut className="w-4 h-4" />
@@ -184,7 +190,7 @@ export default function DashboardLayout({
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-                onClick={() => signOut({ callbackUrl: "/login" })}
+                onClick={() => signOut({ callbackUrl: `${window.location.origin}/login` })}
               >
                 <LogOut className="w-4 h-4" />
               </Button>
