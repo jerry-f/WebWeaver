@@ -79,7 +79,7 @@ export async function generateSummary(title: string, content: string): Promise<S
       // 较低的 temperature 使输出更稳定、更确定性
       temperature: 0.3,
       // 限制输出长度，摘要不需要太长
-      max_tokens: 500,
+      max_tokens: 2000,
     })
 
     // ========== 解析 AI 响应 ==========
