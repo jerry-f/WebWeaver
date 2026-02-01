@@ -1,65 +1,183 @@
-import Image from "next/image";
+'use client'
+
+import { useEffect, useState, useCallback, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { ArticleList } from '@/components/ArticleList'
+import { ArticleView } from '@/components/ArticleView'
+import { Sidebar } from '@/components/Sidebar'
+import { AddSourceModal } from '@/components/AddSourceModal'
+
+interface Source {
+  id: string
+  name: string
+  type: string
+  url: string
+  enabled: boolean
+  _count: { articles: number }
+}
+
+interface Article {
+  id: string
+  title: string
+  content?: string
+  url: string
+  imageUrl?: string
+  author?: string
+  publishedAt?: string
+  read: boolean
+  starred: boolean
+  source: { name: string }
+}
+
+function HomeContent() {
+  const [sources, setSources] = useState<Source[]>([])
+  const [selectedSource, setSelectedSource] = useState<string | null>(null)
+  const [showAddModal, setShowAddModal] = useState(false)
+  const [filter, setFilter] = useState<'all' | 'unread' | 'starred'>('all')
+  const [search, setSearch] = useState('')
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [selectedArticle, setSelectedArticle] = useState<Article | null>(null)
+  
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  
+  const fetchSources = useCallback(async () => {
+    const res = await fetch('/api/sources')
+    const data = await res.json()
+    setSources(data)
+  }, [])
+  
+  useEffect(() => {
+    fetchSources()
+  }, [fetchSources])
+  
+  // Restore selected article from URL on mount
+  useEffect(() => {
+    const articleId = searchParams.get('article')
+    if (articleId && !selectedArticle) {
+      // Fetch article data
+      fetch(`/api/articles/${articleId}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(article => {
+          if (article) setSelectedArticle(article)
+        })
+    }
+  }, [searchParams])
+  
+  async function handleFetchAll() {
+    for (const source of sources) {
+      await fetch(`/api/sources/${source.id}/fetch`, { method: 'POST' })
+    }
+    fetchSources()
+    setRefreshKey(k => k + 1)
+  }
+  
+  async function handleMarkAllRead() {
+    const params = new URLSearchParams()
+    if (selectedSource) params.set('sourceId', selectedSource)
+    await fetch(`/api/articles?${params}`, { method: 'PATCH' })
+    setRefreshKey(k => k + 1)
+  }
+  
+  async function handleDeleteSource(id: string) {
+    if (!confirm('确定删除此来源及其所有文章？')) return
+    await fetch(`/api/sources/${id}`, { method: 'DELETE' })
+    if (selectedSource === id) setSelectedSource(null)
+    fetchSources()
+    setRefreshKey(k => k + 1)
+  }
+  
+  function handleSelectSource(id: string | null) {
+    setSelectedSource(id)
+    setSelectedArticle(null)
+    // Clear article from URL when changing source
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('article')
+    router.push(params.toString() ? `?${params.toString()}` : '/', { scroll: false })
+  }
+  
+  function handleArticleUpdate(updated: Article) {
+    setSelectedArticle(updated)
+  }
+  
+  return (
+    <div className="flex h-screen bg-zinc-900 overflow-hidden">
+      <Sidebar
+        sources={sources}
+        selectedSource={selectedSource}
+        onSelectSource={handleSelectSource}
+        onAddSource={() => setShowAddModal(true)}
+        onFetchAll={handleFetchAll}
+        onRefresh={fetchSources}
+        onDeleteSource={handleDeleteSource}
+        filter={filter}
+        onFilterChange={setFilter}
+      />
+      <main className="flex-1 min-w-0 overflow-hidden flex">
+        {/* Article List - always visible */}
+        <div className={`${selectedArticle ? 'hidden lg:block lg:w-96' : 'w-full'} border-r border-zinc-800 flex flex-col overflow-hidden`}>
+          <div className="p-3 border-b border-zinc-800 flex gap-2 flex-shrink-0">
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="搜索文章..."
+              className="flex-1 px-3 py-1.5 bg-zinc-800 rounded border border-zinc-700 text-sm focus:outline-none focus:border-blue-500"
+            />
+            <button
+              onClick={handleMarkAllRead}
+              className="px-3 py-1.5 text-sm text-zinc-400 hover:text-white hover:bg-zinc-800 rounded whitespace-nowrap"
+            >
+              全部已读
+            </button>
+          </div>
+          <div className="flex-1 overflow-auto">
+            <ArticleList
+              key={refreshKey}
+              sourceId={selectedSource}
+              filter={filter}
+              search={search}
+              selectedId={selectedArticle?.id || null}
+              onSelectArticle={setSelectedArticle}
+            />
+          </div>
+        </div>
+        
+        {/* Article View */}
+        {selectedArticle && (
+          <div className="flex-1 min-w-0 overflow-hidden">
+            <ArticleView
+              article={selectedArticle}
+              onClose={() => setSelectedArticle(null)}
+              onUpdate={handleArticleUpdate}
+            />
+          </div>
+        )}
+        
+        {/* Empty state when no article selected on large screens */}
+        {!selectedArticle && (
+          <div className="hidden lg:flex flex-1 items-center justify-center text-zinc-600">
+            选择一篇文章阅读
+          </div>
+        )}
+      </main>
+      {showAddModal && (
+        <AddSourceModal
+          onClose={() => setShowAddModal(false)}
+          onAdded={() => {
+            setShowAddModal(false)
+            fetchSources()
+          }}
+        />
+      )}
+    </div>
+  )
+}
 
 export default function Home() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+    <Suspense fallback={<div className="flex h-screen items-center justify-center bg-zinc-900 text-zinc-500">加载中...</div>}>
+      <HomeContent />
+    </Suspense>
+  )
 }
