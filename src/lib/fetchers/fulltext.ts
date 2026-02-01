@@ -2,6 +2,24 @@ import { Readability } from '@mozilla/readability'
 import { JSDOM } from 'jsdom'
 
 /**
+ * 全文抓取结果
+ */
+export interface FullTextResult {
+  /** HTML 格式的正文内容（保留排版、图片、链接等） */
+  content: string
+  /** 纯文本内容（用于 AI 处理、搜索、阅读时间计算） */
+  textContent: string
+  /** 文章标题 */
+  title?: string
+  /** 文章摘要 */
+  excerpt?: string
+  /** 作者 */
+  byline?: string
+  /** 网站名称 */
+  siteName?: string
+}
+
+/**
  * 抓取文章全文内容
  *
  * 访问文章原始 URL，使用 Mozilla 的 Readability 库提取正文内容
@@ -10,17 +28,23 @@ import { JSDOM } from 'jsdom'
  * - 过滤掉导航栏、侧边栏、广告、评论等干扰元素
  * - 提取纯净的文章正文
  *
+ * 重要改进：
+ * - 使用 article.content（HTML 格式）保留排版和图片
+ * - 同时提供 textContent（纯文本）用于 AI 和搜索
+ * - 处理懒加载图片属性（data-src 等）
+ *
  * @param url - 文章页面的 URL
  * @returns 返回包含正文和标题的对象，失败时返回 null
  *
  * @example
  * const result = await fetchFullText('https://example.com/article/123')
  * if (result) {
- *   console.log(result.content)  // 纯文本正文
- *   console.log(result.title)    // 文章标题
+ *   console.log(result.content)      // HTML 格式正文
+ *   console.log(result.textContent)  // 纯文本正文
+ *   console.log(result.title)        // 文章标题
  * }
  */
-export async function fetchFullText(url: string): Promise<{ content: string; title?: string } | null> {
+export async function fetchFullText(url: string): Promise<FullTextResult | null> {
   try {
     // ========== 第一步：获取网页 HTML ==========
     const res = await fetch(url, {
@@ -42,22 +66,52 @@ export async function fetchFullText(url: string): Promise<{ content: string; tit
     // 使用 jsdom 创建虚拟 DOM 环境
     // 传入 url 参数确保相对路径能正确解析
     const dom = new JSDOM(html, { url })
+    const document = dom.window.document
+
+    // ========== 第 2.5 步：处理懒加载图片 ==========
+    // 很多网站使用懒加载，真实图片 URL 在 data-src 等属性中
+    const lazyAttributes = ['data-src', 'data-lazy-src', 'data-original', 'data-actualsrc']
+    const images = document.querySelectorAll('img')
+    images.forEach((img) => {
+      // 检查懒加载属性
+      for (const attr of lazyAttributes) {
+        const lazySrc = img.getAttribute(attr)
+        if (lazySrc && lazySrc.startsWith('http')) {
+          img.setAttribute('src', lazySrc)
+          break
+        }
+      }
+      // 处理 srcset 中的懒加载
+      const dataSrcset = img.getAttribute('data-srcset')
+      if (dataSrcset) {
+        img.setAttribute('srcset', dataSrcset)
+      }
+    })
 
     // ========== 第三步：使用 Readability 提取正文 ==========
     // Readability 会分析 DOM 结构，识别并提取主要内容
     // 它会给页面中的各个元素打分，选择得分最高的区域作为正文
-    const reader = new Readability(dom.window.document)
+    const reader = new Readability(document)
     const article = reader.parse()
 
     // 如果无法解析出文章（可能是非文章页面），返回 null
-    if (!article || !article.textContent) return null
+    if (!article || !article.content) return null
 
     // ========== 第四步：返回提取结果 ==========
     return {
-      // textContent 是去除 HTML 标签后的纯文本内容
-      content: article.textContent.trim(),
-      // 提取到的文章标题（可能与页面 <title> 不同）
-      title: article.title || undefined
+      // content 是保留 HTML 标签的内容（用于展示）
+      // 关键改进：使用 article.content 而非 article.textContent
+      content: article.content,
+      // textContent 是纯文本（用于 AI 处理、搜索、阅读时间计算）
+      textContent: article.textContent?.trim() || '',
+      // 提取到的文章标题
+      title: article.title || undefined,
+      // 文章摘要
+      excerpt: article.excerpt || undefined,
+      // 作者信息
+      byline: article.byline || undefined,
+      // 网站名称
+      siteName: article.siteName || undefined
     }
   } catch (e) {
     // 捕获所有错误（网络错误、超时、解析错误等）

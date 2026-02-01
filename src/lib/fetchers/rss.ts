@@ -55,9 +55,10 @@ export async function fetchRSS(url: string): Promise<FetchedArticle[]> {
     // 标题，如果为空则显示 'Untitled'
     title: item.title || 'Untitled',
 
-    // 内容优先级：contentSnippet（纯文本摘要） > content（HTML） > summary
-    // contentSnippet 是 rss-parser 自动去除 HTML 标签后的纯文本
-    content: item.contentSnippet || item.content || item.summary,
+    // 内容优先级：content（HTML） > summary > contentSnippet（纯文本摘要）
+    // 关键改进：优先使用 HTML 格式的 content，保留排版和图片
+    // contentSnippet 是 rss-parser 自动去除 HTML 标签后的纯文本，作为最后备选
+    content: item.content || item.summary || item.contentSnippet,
 
     // 文章链接
     url: item.link || '',

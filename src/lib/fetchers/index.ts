@@ -68,6 +68,7 @@ export async function fetchSource(sourceId: string): Promise<{ added: number; er
   for (const article of articles) {
     try {
       let content = article.content
+      let textContent: string | undefined  // 新增：纯文本内容
       let readingTime: number | undefined
 
       // ---------- 3.1 全文抓取（可选） ----------
@@ -76,15 +77,17 @@ export async function fetchSource(sourceId: string): Promise<{ added: number; er
       if (source.fetchFullText && article.url) {
         const fullText = await fetchFullText(article.url)
         if (fullText?.content) {
-          content = fullText.content
+          content = fullText.content          // HTML 格式（用于展示）
+          textContent = fullText.textContent  // 纯文本（用于 AI/搜索）
         }
       }
 
       // ---------- 3.2 计算阅读时间 ----------
       // 根据文章内容长度估算阅读所需分钟数
-      // 通常按照每分钟 200-300 字计算
-      if (content) {
-        readingTime = calculateReadingTime(content)
+      // 优先使用纯文本计算，更准确
+      const textForReading = textContent || content
+      if (textForReading) {
+        readingTime = calculateReadingTime(textForReading)
       }
 
       // ---------- 3.3 存入数据库（Upsert 去重） ----------
@@ -106,14 +109,17 @@ export async function fetchSource(sourceId: string): Promise<{ added: number; er
           sourceId: source.id,           // 关联的信息源 ID
           externalId: article.externalId, // 外部唯一标识（用于去重）
           title: article.title,           // 文章标题
-          content,                        // 文章内容（可能是摘要或全文）
+          content,                        // HTML 格式内容（用于展示）
+          textContent,                    // 纯文本内容（用于 AI/搜索）
           url: article.url,               // 文章原始链接
           imageUrl: article.imageUrl,     // 封面图 URL
           author: article.author,         // 作者
           publishedAt: article.publishedAt, // 发布时间
           readingTime,                    // 预计阅读时间（分钟）
           category: source?.category || null,      // 从信息源继承分类
-          summaryStatus: 'pending'        // AI 摘要状态：待生成
+          summaryStatus: 'pending',       // AI 摘要状态：待生成
+          contentStatus: content ? 'completed' : 'pending',  // 内容抓取状态
+          fetchStrategy: source.fetchFullText ? 'fetch' : undefined  // 抓取策略
         },
         update: {} // 已存在的文章不做任何更新
       })
