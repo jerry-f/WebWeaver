@@ -125,11 +125,12 @@ go-scraper-service/
 ```go
 // go.mod
 require (
-    github.com/gocolly/colly/v2    // 爬虫框架
-    github.com/go-shiori/go-readability // 正文提取
-    github.com/microcosm-cc/bluemonday  // HTML 净化
-    github.com/PuerkitoBio/goquery     // HTML 解析
-    google.golang.org/grpc             // gRPC 通信
+    github.com/gocolly/colly/v2             // 爬虫框架
+    github.com/go-shiori/go-readability     // 正文提取
+    github.com/microcosm-cc/bluemonday      // HTML 净化
+    github.com/PuerkitoBio/goquery          // HTML 解析
+    google.golang.org/grpc                  // gRPC 通信
+    github.com/Danny-Dasilva/CycleTLS/cycletls  // TLS 指纹伪造（关键）
 )
 ```
 
@@ -501,12 +502,13 @@ services:
       - REDIS_URL=redis://redis:6379
       - GO_SCRAPER_URL=go-scraper:50051
       - BROWSERLESS_URL=ws://browserless:3000
-      - IMGPROXY_URL=http://imgproxy:8080
+      - IMGPROXY_URL=http://varnish:80
+      - CREDENTIAL_SECRET=${CREDENTIAL_SECRET}
     depends_on:
       - redis
       - go-scraper
       - browserless
-      - imgproxy
+      - varnish
     volumes:
       - ./data:/app/data
 
@@ -515,7 +517,7 @@ services:
     image: redis:7-alpine
     volumes:
       - redis-data:/data
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru
 
   # Go 抓取服务
   go-scraper:
@@ -525,6 +527,7 @@ services:
       - HTTP_PORT=8080
       - MAX_CONCURRENT=100
       - BROWSERLESS_URL=ws://browserless:3000
+      - REDIS_URL=redis://redis:6379
     deploy:
       resources:
         limits:
@@ -537,10 +540,30 @@ services:
       - MAX_CONCURRENT_SESSIONS=5
       - CONNECTION_TIMEOUT=60000
       - PREBOOT_CHROME=true
+      - KEEP_ALIVE=true
+      - ENABLE_DEBUGGER=false
+      - BLOCK_ADS=true
+    shm_size: '2gb'
     deploy:
       resources:
         limits:
           memory: 2G
+
+  # Varnish 缓存（C 级性能，放在 imgproxy 前面）
+  varnish:
+    image: varnish:stable
+    ports:
+      - "8888:80"
+    volumes:
+      - ./config/varnish.vcl:/etc/varnish/default.vcl:ro
+    environment:
+      - VARNISH_SIZE=256M
+    depends_on:
+      - imgproxy
+    deploy:
+      resources:
+        limits:
+          memory: 512M
 
   # imgproxy 图片代理
   imgproxy:
@@ -548,6 +571,11 @@ services:
     environment:
       - IMGPROXY_BIND=:8080
       - IMGPROXY_LOCAL_FILESYSTEM_ROOT=/cache
+      - IMGPROXY_USE_ETAG=true
+      - IMGPROXY_CACHE_CONTROL_PASSTHROUGH=true
+      - IMGPROXY_ENABLE_WEBP_DETECTION=true
+      - IMGPROXY_ENABLE_AVIF_DETECTION=true
+      - IMGPROXY_MAX_SRC_RESOLUTION=50
       - IMGPROXY_KEY=${IMGPROXY_KEY}
       - IMGPROXY_SALT=${IMGPROXY_SALT}
     volumes:
@@ -562,30 +590,83 @@ volumes:
   imgproxy-cache:
 ```
 
+### Varnish 配置
+
+```vcl
+# config/varnish.vcl
+vcl 4.1;
+
+backend imgproxy {
+    .host = "imgproxy";
+    .port = "8080";
+}
+
+sub vcl_recv {
+    # 只缓存图片请求
+    if (req.url ~ "^/insecure/" || req.url ~ "^/signature/") {
+        return (hash);
+    }
+    return (pass);
+}
+
+sub vcl_backend_response {
+    # 图片缓存 7 天
+    if (beresp.http.content-type ~ "image/") {
+        set beresp.ttl = 7d;
+        set beresp.grace = 1d;
+        unset beresp.http.set-cookie;
+    }
+}
+
+sub vcl_deliver {
+    # 添加缓存命中标识
+    if (obj.hits > 0) {
+        set resp.http.X-Cache = "HIT";
+    } else {
+        set resp.http.X-Cache = "MISS";
+    }
+}
+```
+
 ## 九、性能优化清单
 
 ### Go 服务优化
-- [x] HTTP 连接池复用（减少 TCP 握手）
-- [x] DNS 缓存
-- [x] 并发控制（goroutine 池）
-- [x] 请求超时控制
+- [ ] HTTP 连接池复用（减少 TCP 握手）
+- [ ] DNS 缓存
+- [ ] 并发控制（goroutine 池）
+- [ ] 请求超时控制
+- [ ] TLS 指纹伪造（cycletls）
+
+### 域名级调度（防封核心）
+- [ ] 每域名并发上限控制
+- [ ] 每域名 RPS 限速
+- [ ] 失败指数退避（2^n 秒）
+- [ ] 连续 5 次失败熔断（暂停 5 分钟）
+- [ ] 熔断自动恢复探测
+- [ ] 域名级统计监控
 
 ### Browserless 优化
-- [x] 浏览器预启动（PREBOOT_CHROME）
-- [x] 页面复用（KEEP_ALIVE）
-- [x] 资源阻止（字体、媒体）
-- [x] 会话数限制
+- [ ] 浏览器预启动（PREBOOT_CHROME）
+- [ ] 页面复用（KEEP_ALIVE）
+- [ ] 资源阻止（字体、媒体、广告）
+- [ ] 会话数限制
 
 ### imgproxy 优化
-- [x] libvips 硬件加速
-- [x] 响应缓存
-- [x] WebP/AVIF 自动转换
+- [ ] libvips 硬件加速
+- [ ] 响应缓存
+- [ ] WebP/AVIF 自动转换
+
+### Varnish 缓存优化
+- [ ] 图片缓存 7 天 TTL
+- [ ] 缓存命中率监控
+- [ ] 内存缓存 256MB
 
 ### 整体架构优化
-- [x] 服务解耦，独立扩展
-- [x] gRPC 内部通信（比 REST 快 7-10 倍）
-- [x] 异步任务队列
-- [x] 智能回退策略
+- [ ] 服务解耦，独立扩展
+- [ ] gRPC 内部通信（比 REST 快 7-10 倍）
+- [ ] 异步任务队列
+- [ ] 智能回退策略
+- [ ] QualityScore 驱动升级
 
 ## 十、关键文件清单
 
@@ -594,11 +675,16 @@ volumes:
 | **P0** | `src/lib/fetchers/fulltext.ts` | 修复 | TS |
 | **P0** | `src/lib/fetchers/rss.ts` | 修复 | TS |
 | **P0** | `prisma/schema.prisma` | 修改 | Prisma |
+| **P1** | `src/lib/auth/credential-crypto.ts` | 新建 | TS |
+| **P1** | `src/lib/auth/auto-login.ts` | 新建 | TS |
+| **P1** | `src/lib/fetchers/auth-fetch.ts` | 新建 | TS |
 | **P1** | `go-scraper-service/` | 新建项目 | Go |
 | **P1** | `docker-compose.yml` | 新建 | YAML |
+| **P1** | `config/varnish.vcl` | 新建 | VCL |
 | **P1** | `src/lib/fetchers/clients/` | 新建 | TS |
 | **P2** | imgproxy 配置 | 部署 | Docker |
 | **P2** | Browserless 配置 | 部署 | Docker |
+| **P3** | `src/lib/tasks/refresh-credentials.ts` | 新建 | TS |
 
 ## 十一、验证方案
 
@@ -634,3 +720,429 @@ wrk -t4 -c100 -d30s http://localhost:8080/fetch?url=...
 ---
 
 **总结**：此方案通过微服务解耦，将性能关键路径（抓取、图片处理）使用 Go 实现，同时保持 Node.js 处理业务逻辑和 UI，实现了性能与开发效率的最佳平衡。
+
+## 十二、用户认证内容抓取
+
+### 场景说明
+
+用户抓取自己已登录账号的付费/私有内容（完全合规场景）。
+
+### 方案：Cookie 注入 + 自动维护
+
+**核心思路**：系统统一管理用户的登录凭证，定期自动刷新保证有效性。
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           Cookie 认证流程                                    │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  1. 用户配置阶段                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  用户在 UI 中添加需要登录的源：                                       │   │
+│  │                                                                      │   │
+│  │  方式 A：手动粘贴 Cookie                                              │   │
+│  │  - 用户从浏览器开发者工具复制 Cookie                                   │   │
+│  │  - 系统 AES-256 加密存储到数据库                                      │   │
+│  │                                                                      │   │
+│  │  方式 B：自动登录（推荐）                                             │   │
+│  │  - 用户提供账号密码（加密存储）                                       │   │
+│  │  - 系统通过 Browserless 自动登录获取 Cookie                          │   │
+│  │  - 定时任务自动刷新 Cookie                                           │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  2. 抓取阶段                                                                │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  抓取任务 → 检查源是否需要认证 → 解密 Cookie → 注入到请求头           │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+│  3. 维护阶段                                                                │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │  定时任务（可配置：每天/每周）：                                       │   │
+│  │  - 检测 Cookie 是否过期（抓取失败 401/403）                           │   │
+│  │  - 自动重新登录刷新 Cookie                                           │   │
+│  │  - 更新数据库中的加密凭证                                            │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 数据库设计
+
+```prisma
+// 站点认证凭证表
+model SiteCredential {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // 站点标识
+  domain          String                    // 域名，如 "medium.com"
+  name            String?                   // 显示名称，如 "Medium 会员"
+
+  // 认证方式
+  authType        String                    // 'cookie' | 'login' | 'token'
+
+  // 加密存储的凭证（AES-256-GCM）
+  encryptedCookie     String?              // 加密后的 Cookie
+  encryptedUsername   String?              // 加密后的用户名
+  encryptedPassword   String?              // 加密后的密码
+  encryptedToken      String?              // 加密后的 API Token
+
+  // 登录配置（用于自动登录）
+  loginUrl            String?              // 登录页面 URL
+  loginSelectors      String?              // JSON: { username: '#email', password: '#pwd', submit: 'button' }
+
+  // 状态追踪
+  status          String    @default("active")    // active/expired/error
+  lastUsedAt      DateTime?
+  lastRefreshedAt DateTime?
+  expiresAt       DateTime?                       // Cookie 预计过期时间
+  errorMessage    String?
+
+  // 刷新配置
+  refreshInterval String    @default("weekly")    // daily/weekly/manual
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // 关联到使用此凭证的源
+  sources         Source[]
+
+  @@unique([userId, domain])
+  @@index([status])
+  @@index([expiresAt])
+}
+
+// Source 表添加关联
+model Source {
+  // ... 现有字段
+
+  // 认证关联（可选）
+  credentialId    String?
+  credential      SiteCredential? @relation(fields: [credentialId], references: [id])
+}
+```
+
+### 核心实现
+
+#### 1. 凭证加密服务
+
+```typescript
+// src/lib/auth/credential-crypto.ts
+import { createCipheriv, createDecipheriv, randomBytes, scryptSync } from 'crypto';
+
+const ALGORITHM = 'aes-256-gcm';
+const KEY = scryptSync(process.env.CREDENTIAL_SECRET!, 'salt', 32);
+
+export function encryptCredential(plaintext: string): string {
+  const iv = randomBytes(16);
+  const cipher = createCipheriv(ALGORITHM, KEY, iv);
+
+  let encrypted = cipher.update(plaintext, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+
+  const authTag = cipher.getAuthTag();
+
+  // 格式：iv:authTag:encrypted
+  return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+}
+
+export function decryptCredential(encrypted: string): string {
+  const [ivHex, authTagHex, encryptedData] = encrypted.split(':');
+
+  const iv = Buffer.from(ivHex, 'hex');
+  const authTag = Buffer.from(authTagHex, 'hex');
+  const decipher = createDecipheriv(ALGORITHM, KEY, iv);
+
+  decipher.setAuthTag(authTag);
+
+  let decrypted = decipher.update(encryptedData, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+
+  return decrypted;
+}
+```
+
+#### 2. 自动登录服务
+
+```typescript
+// src/lib/auth/auto-login.ts
+import { chromium } from 'playwright';
+
+interface LoginConfig {
+  loginUrl: string;
+  selectors: {
+    username: string;
+    password: string;
+    submit: string;
+    successIndicator?: string;  // 登录成功后出现的元素
+  };
+}
+
+export async function autoLogin(
+  config: LoginConfig,
+  username: string,
+  password: string
+): Promise<string> {
+  const browser = await chromium.connect(process.env.BROWSERLESS_URL!);
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+  try {
+    // 1. 访问登录页
+    await page.goto(config.loginUrl, { waitUntil: 'networkidle' });
+
+    // 2. 填写表单
+    await page.fill(config.selectors.username, username);
+    await page.fill(config.selectors.password, password);
+
+    // 3. 点击登录
+    await page.click(config.selectors.submit);
+
+    // 4. 等待登录成功
+    if (config.selectors.successIndicator) {
+      await page.waitForSelector(config.selectors.successIndicator, { timeout: 10000 });
+    } else {
+      await page.waitForNavigation({ waitUntil: 'networkidle' });
+    }
+
+    // 5. 提取 Cookie
+    const cookies = await context.cookies();
+    const cookieString = cookies
+      .map(c => `${c.name}=${c.value}`)
+      .join('; ');
+
+    return cookieString;
+  } finally {
+    await context.close();
+  }
+}
+```
+
+#### 3. Cookie 刷新定时任务
+
+```typescript
+// src/lib/tasks/refresh-credentials.ts
+import { prisma } from '../prisma';
+import { decryptCredential, encryptCredential } from '../auth/credential-crypto';
+import { autoLogin } from '../auth/auto-login';
+
+export async function refreshExpiredCredentials() {
+  // 查找需要刷新的凭证
+  const credentials = await prisma.siteCredential.findMany({
+    where: {
+      OR: [
+        { status: 'expired' },
+        {
+          refreshInterval: 'daily',
+          lastRefreshedAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) }
+        },
+        {
+          refreshInterval: 'weekly',
+          lastRefreshedAt: { lt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }
+        }
+      ],
+      authType: 'login',  // 只有 login 类型才能自动刷新
+    }
+  });
+
+  for (const cred of credentials) {
+    try {
+      // 解密用户名密码
+      const username = decryptCredential(cred.encryptedUsername!);
+      const password = decryptCredential(cred.encryptedPassword!);
+      const loginConfig = JSON.parse(cred.loginSelectors!);
+
+      // 自动登录获取新 Cookie
+      const newCookie = await autoLogin(
+        { loginUrl: cred.loginUrl!, selectors: loginConfig },
+        username,
+        password
+      );
+
+      // 更新数据库
+      await prisma.siteCredential.update({
+        where: { id: cred.id },
+        data: {
+          encryptedCookie: encryptCredential(newCookie),
+          status: 'active',
+          lastRefreshedAt: new Date(),
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 假设 7 天有效
+          errorMessage: null,
+        }
+      });
+
+      console.log(`✅ Refreshed credential for ${cred.domain}`);
+    } catch (error) {
+      // 刷新失败，标记状态
+      await prisma.siteCredential.update({
+        where: { id: cred.id },
+        data: {
+          status: 'error',
+          errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        }
+      });
+
+      console.error(`❌ Failed to refresh credential for ${cred.domain}:`, error);
+    }
+  }
+}
+```
+
+#### 4. 抓取时注入 Cookie
+
+```typescript
+// src/lib/fetchers/auth-fetch.ts
+import { prisma } from '../prisma';
+import { decryptCredential } from '../auth/credential-crypto';
+
+export async function fetchWithAuth(sourceId: string, url: string): Promise<Response> {
+  // 获取源配置
+  const source = await prisma.source.findUnique({
+    where: { id: sourceId },
+    include: { credential: true }
+  });
+
+  const headers: Record<string, string> = {
+    'User-Agent': 'Mozilla/5.0 (compatible; NewsFlow/1.0)',
+  };
+
+  // 如果有认证凭证，注入 Cookie
+  if (source?.credential?.encryptedCookie) {
+    try {
+      const cookie = decryptCredential(source.credential.encryptedCookie);
+      headers['Cookie'] = cookie;
+    } catch (error) {
+      console.error('Failed to decrypt cookie:', error);
+    }
+  }
+
+  const response = await fetch(url, { headers });
+
+  // 检测认证失败，标记凭证过期
+  if (response.status === 401 || response.status === 403) {
+    if (source?.credential) {
+      await prisma.siteCredential.update({
+        where: { id: source.credential.id },
+        data: { status: 'expired' }
+      });
+    }
+  }
+
+  return response;
+}
+```
+
+### 常见站点登录配置示例
+
+```typescript
+// src/lib/auth/site-configs.ts
+
+export const SITE_LOGIN_CONFIGS: Record<string, {
+  loginUrl: string;
+  selectors: {
+    username: string;
+    password: string;
+    submit: string;
+    successIndicator?: string;
+  };
+}> = {
+  'medium.com': {
+    loginUrl: 'https://medium.com/m/signin',
+    selectors: {
+      username: 'input[name="email"]',
+      password: 'input[name="password"]',
+      submit: 'button[type="submit"]',
+      successIndicator: '[data-testid="headerAvatar"]',
+    }
+  },
+  'zhihu.com': {
+    loginUrl: 'https://www.zhihu.com/signin',
+    selectors: {
+      username: 'input[name="username"]',
+      password: 'input[name="password"]',
+      submit: 'button[type="submit"]',
+      successIndicator: '.AppHeader-profile',
+    }
+  },
+  // 更多站点配置...
+};
+```
+
+### 安全注意事项
+
+| 措施 | 说明 |
+|------|------|
+| **AES-256-GCM 加密** | 所有凭证加密存储，密钥从环境变量读取 |
+| **密钥轮换** | 支持定期轮换 CREDENTIAL_SECRET |
+| **最小权限** | 凭证仅用于对应域名的抓取 |
+| **用户隔离** | 每个用户的凭证完全隔离 |
+| **审计日志** | 记录凭证的使用和刷新历史 |
+| **用户通知** | 凭证过期或刷新失败时通知用户 |
+
+### 实施阶段
+
+**阶段 1.5：Cookie 认证支持（1-2 天）**
+
+1. 数据库迁移：添加 `SiteCredential` 表
+2. 实现凭证加密/解密服务
+3. 实现手动粘贴 Cookie 功能
+4. 修改抓取逻辑，注入 Cookie
+
+**阶段 6（可选）：自动登录维护**
+
+1. 实现自动登录服务
+2. 添加定时刷新任务
+3. 配置常见站点的登录规则
+4. 实现凭证状态监控和通知
+
+## 十三、域名级调度（防封核心）
+
+### 调度策略
+
+```typescript
+// src/lib/scheduler/domain-scheduler.ts
+
+interface DomainLimit {
+  maxConcurrent: number;    // 同时最大并发
+  rps: number;              // 每秒请求数
+  backoff: number;          // 当前退避时间 (ms)
+  failCount: number;        // 连续失败次数
+  circuitOpen: boolean;     // 熔断状态
+  lastRequest: number;      // 上次请求时间戳
+}
+
+// 默认限制配置
+const DEFAULT_LIMITS: Record<string, Partial<DomainLimit>> = {
+  'medium.com':     { maxConcurrent: 2, rps: 1 },
+  'twitter.com':    { maxConcurrent: 1, rps: 0.5 },
+  'zhihu.com':      { maxConcurrent: 3, rps: 2 },
+  'weixin.qq.com':  { maxConcurrent: 5, rps: 5 },
+  '*':              { maxConcurrent: 10, rps: 10 },  // 默认
+};
+```
+
+### 性能优化清单补充
+
+```markdown
+### 域名级调度（防封核心）
+- [ ] 每域名并发上限控制
+- [ ] 每域名 RPS 限速
+- [ ] 失败指数退避（2^n 秒）
+- [ ] 连续 5 次失败熔断（暂停 5 分钟）
+- [ ] 熔断自动恢复探测
+- [ ] 域名级统计监控
+```
+
+## 十四、修订后的实施路线图
+
+| 阶段 | 内容 | 时间 | 优先级 |
+|------|------|------|--------|
+| **Phase 0** | 修复 fulltext.ts/rss.ts | 1-2h | P0 |
+| **Phase 1** | 本地增强 (HTML净化、懒加载) | 1-2天 | P0 |
+| **Phase 1.5** | Cookie 认证支持 | 1-2天 | P1 |
+| **Phase 2** | Browserless 部署 | 2-3天 | P1 |
+| **Phase 3** | Go fetchd (TLS伪造、域名调度) | 3-5天 | P1 |
+| **Phase 4** | imgproxy + Varnish | 1天 | P2 |
+| **Phase 5** | BullMQ 任务队列 | 2天 | P2 |
+| **Phase 6** | 自动登录维护（可选） | 2-3天 | P3 |
