@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import prisma from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { Newspaper, Rss, Users, TrendingUp, Clock, CheckCircle } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
 import Link from "next/link";
@@ -139,7 +139,7 @@ export default async function DashboardPage() {
                     <div className="flex items-center gap-2 mt-1">
                       <Badge
                         variant="secondary"
-                        className={categoryColors[article.source.category] || categoryColors.news}
+                        className={categoryColors.news}
                       >
                         {article.source.name}
                       </Badge>

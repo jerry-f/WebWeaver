@@ -48,8 +48,13 @@ function HomeContent() {
   }, [])
   
   useEffect(() => {
-    fetchSources()
-  }, [fetchSources])
+    const loadSources = async () => {
+      const res = await fetch('/api/sources')
+      const data = await res.json()
+      setSources(data)
+    }
+    loadSources()
+  }, [])
   
   // Restore selected article from URL on mount
   useEffect(() => {
@@ -62,7 +67,7 @@ function HomeContent() {
           if (article) setSelectedArticle(article)
         })
     }
-  }, [searchParams])
+  }, [searchParams, selectedArticle])
   
   async function handleFetchAll() {
     for (const source of sources) {

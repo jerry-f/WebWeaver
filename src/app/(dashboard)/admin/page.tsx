@@ -1,26 +1,23 @@
 import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
-import prisma from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Users, Newspaper, Rss, Activity, Shield, Clock } from "lucide-react";
+import { Users, Newspaper, Rss, Shield } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
 import FetchButton from "./fetch-button";
 
 async function getAdminStats() {
-  const [users, articles, sources, tasks] = await Promise.all([
+  const [users, articles, sources] = await Promise.all([
     prisma.user.findMany({
       orderBy: { createdAt: "desc" },
       take: 10,
     }),
     prisma.article.count(),
     prisma.source.count(),
-    prisma.task.findMany({
-      orderBy: { createdAt: "desc" },
-    }),
   ]);
 
-  return { users, articles, sources, tasks };
+  return { users, articles, sources };
 }
 
 export default async function AdminPage() {
@@ -136,52 +133,6 @@ export default async function AdminPage() {
               </tbody>
             </table>
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Tasks */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="w-5 h-5" />
-            定时任务
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {stats.tasks.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">
-              暂无定时任务
-            </p>
-          ) : (
-            <div className="space-y-3">
-              {stats.tasks.map((task) => (
-                <div
-                  key={task.id}
-                  className="flex items-center justify-between p-3 border rounded-lg"
-                >
-                  <div>
-                    <p className="font-medium">{task.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {task.schedule}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {task.lastRun && (
-                      <span className="text-sm text-muted-foreground flex items-center">
-                        <Clock className="w-3 h-3 mr-1" />
-                        {formatDateTime(task.lastRun)}
-                      </span>
-                    )}
-                    <Badge
-                      variant={task.enabled ? "default" : "secondary"}
-                    >
-                      {task.enabled ? "运行中" : "已停止"}
-                    </Badge>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
         </CardContent>
       </Card>
     </div>

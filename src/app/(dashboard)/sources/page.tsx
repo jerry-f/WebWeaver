@@ -1,8 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import prisma from "@/lib/prisma";
-import { Rss, Globe, Zap, Clock, AlertCircle } from "lucide-react";
-import { formatDateTime } from "@/lib/utils";
+import { prisma } from "@/lib/prisma";
+import { Rss, Globe, Zap } from "lucide-react";
 import AddSourceButton from "./add-source-button";
 
 async function getSources() {
@@ -83,33 +82,22 @@ export default async function SourcesPage() {
                         <CardTitle className="text-base">{source.name}</CardTitle>
                         <Badge
                           variant="secondary"
-                          className={`mt-1 ${categoryColors[source.category] || categoryColors.news}`}
+                          className={`mt-1 ${categoryColors.news}`}
                         >
-                          {categoryLabels[source.category] || source.category}
+                          {source.type}
                         </Badge>
                       </div>
                     </div>
-                    {source.errorCount > 0 && (
-                      <div className="flex items-center text-amber-500" title={`${source.errorCount} 次错误`}>
-                        <AlertCircle className="w-4 h-4" />
-                      </div>
-                    )}
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <p className="text-sm text-muted-foreground line-clamp-2">
-                    {source.description || source.url}
+                    {source.url}
                   </p>
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-muted-foreground">
                       {source._count.articles} 篇文章
                     </span>
-                    {source.lastFetch && (
-                      <span className="text-muted-foreground flex items-center">
-                        <Clock className="w-3 h-3 mr-1" />
-                        {formatDateTime(source.lastFetch)}
-                      </span>
-                    )}
                   </div>
                 </CardContent>
               </Card>

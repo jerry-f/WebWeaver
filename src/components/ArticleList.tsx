@@ -58,13 +58,16 @@ export function ArticleList({ sourceId, filter, search, selectedId, onSelectArti
     if (articleId && articles.length > 0) {
       const idx = articles.findIndex(a => a.id === articleId)
       if (idx >= 0) {
-        setFocusIndex(idx)
-        onSelectArticle(articles[idx])
+        // Use callback to avoid direct setState in effect
+        requestAnimationFrame(() => {
+          setFocusIndex(idx)
+          onSelectArticle(articles[idx])
+        })
       }
     }
   }, [searchParams, articles, onSelectArticle])
   
-  async function toggleRead(article: Article) {
+  const toggleRead = useCallback(async (article: Article) => {
     await fetch(`/api/articles/${article.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -73,9 +76,9 @@ export function ArticleList({ sourceId, filter, search, selectedId, onSelectArti
     setArticles(prev => prev.map(a =>
       a.id === article.id ? { ...a, read: !a.read } : a
     ))
-  }
-  
-  async function toggleStarred(article: Article) {
+  }, [])
+
+  const toggleStarred = useCallback(async (article: Article) => {
     await fetch(`/api/articles/${article.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -84,19 +87,29 @@ export function ArticleList({ sourceId, filter, search, selectedId, onSelectArti
     setArticles(prev => prev.map(a =>
       a.id === article.id ? { ...a, starred: !a.starred } : a
     ))
-  }
-  
-  function selectArticle(article: Article, index: number) {
+  }, [])
+
+  const selectArticle = useCallback((article: Article, index: number) => {
     setFocusIndex(index)
-    if (!article.read) toggleRead(article)
-    
+    if (!article.read) {
+      fetch(`/api/articles/${article.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ read: true })
+      }).then(() => {
+        setArticles(prev => prev.map(a =>
+          a.id === article.id ? { ...a, read: true } : a
+        ))
+      })
+    }
+
     // Update URL
     const params = new URLSearchParams(searchParams.toString())
     params.set('article', article.id)
     router.push(`?${params.toString()}`, { scroll: false })
-    
+
     onSelectArticle(article)
-  }
+  }, [searchParams, router, onSelectArticle])
   
   // Keyboard navigation
   useEffect(() => {
@@ -137,7 +150,7 @@ export function ArticleList({ sourceId, filter, search, selectedId, onSelectArti
     
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [articles, focusIndex, selectedId])
+  }, [articles, focusIndex, selectedId, selectArticle, toggleRead, toggleStarred])
   
   // Scroll focused item into view
   useEffect(() => {

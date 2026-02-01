@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import prisma from "@/lib/prisma";
+import { prisma } from "@/lib/prisma";
 import { Newspaper, ExternalLink, Clock, Bookmark } from "lucide-react";
 import { timeAgo, truncate } from "@/lib/utils";
 import Link from "next/link";
@@ -31,7 +31,7 @@ async function getArticles(page: number, category?: string, search?: string) {
       skip: (page - 1) * limit,
       take: limit,
       include: {
-        source: { select: { name: true, category: true } },
+        source: { select: { name: true } },
       },
     }),
     prisma.article.count({ where }),
@@ -148,7 +148,7 @@ export default async function ArticlesPage({ searchParams }: PageProps) {
                     <div className="flex items-center gap-2 mt-2">
                       <Badge
                         variant="secondary"
-                        className={categoryColors[article.source.category] || categoryColors.news}
+                        className={categoryColors[article.category || "news"] || categoryColors.news}
                       >
                         {article.source.name}
                       </Badge>

@@ -50,9 +50,9 @@ export function ArticleView({ article: initialArticle, onClose, onUpdate }: Arti
     if (!article.content || article.content.length < 500) {
       fetchFullContent()
     }
-  }, [article.id])
+  }, [article.id, article.content, fetchFullContent])
   
-  async function toggleRead() {
+  const toggleRead = useCallback(async () => {
     const newRead = !article.read
     await fetch(`/api/articles/${article.id}`, {
       method: 'PATCH',
@@ -62,9 +62,9 @@ export function ArticleView({ article: initialArticle, onClose, onUpdate }: Arti
     const updated = { ...article, read: newRead }
     setArticle(updated)
     onUpdate(updated)
-  }
-  
-  async function toggleStarred() {
+  }, [article, onUpdate])
+
+  const toggleStarred = useCallback(async () => {
     const newStarred = !article.starred
     await fetch(`/api/articles/${article.id}`, {
       method: 'PATCH',
@@ -74,16 +74,16 @@ export function ArticleView({ article: initialArticle, onClose, onUpdate }: Arti
     const updated = { ...article, starred: newStarred }
     setArticle(updated)
     onUpdate(updated)
-  }
-  
-  function handleClose() {
+  }, [article, onUpdate])
+
+  const handleClose = useCallback(() => {
     // Remove article from URL
     const params = new URLSearchParams(searchParams.toString())
     params.delete('article')
     const newUrl = params.toString() ? `?${params.toString()}` : '/'
     router.push(newUrl, { scroll: false })
     onClose()
-  }
+  }, [searchParams, router, onClose])
   
   // Keyboard shortcuts
   useEffect(() => {
@@ -112,7 +112,7 @@ export function ArticleView({ article: initialArticle, onClose, onUpdate }: Arti
     
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [article])
+  }, [article.url, handleClose, toggleRead, toggleStarred])
   
   return (
     <div className="h-full flex flex-col bg-zinc-900">
