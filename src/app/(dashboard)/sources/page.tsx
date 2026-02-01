@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { prisma } from "@/lib/prisma";
 import { Rss, Globe, Zap } from "lucide-react";
 import AddSourceButton from "./add-source-button";
+import SourceFetchButton from "./source-fetch-button";
 
 async function getSources() {
   return prisma.source.findMany({
@@ -98,6 +99,7 @@ export default async function SourcesPage() {
                     <span className="text-muted-foreground">
                       {source._count.articles} 篇文章
                     </span>
+                    <SourceFetchButton sourceId={source.id} sourceName={source.name} />
                   </div>
                 </CardContent>
               </Card>
