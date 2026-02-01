@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { prisma } from "@/lib/prisma";
-import { Newspaper, Rss, Users, TrendingUp, Clock, ExternalLink, Sparkles } from "lucide-react";
+import { Newspaper, Rss, Users, TrendingUp, Clock, Sparkles } from "lucide-react";
 import { formatDateTime } from "@/lib/utils";
 import Link from "next/link";
 
@@ -146,17 +146,14 @@ export default async function DashboardPage() {
 
                     {/* 内容 */}
                     <div className="flex-1 min-w-0">
-                      <a
-                        href={article.url}
-                        target="_blank"
-                        rel="noopener noreferrer"
+                      <Link
+                        href={`/articles?id=${article.id}`}
                         className="group/link flex items-start gap-2"
                       >
                         <h3 className="font-medium text-foreground group-hover/link:text-primary line-clamp-1 transition-colors">
                           {article.title}
                         </h3>
-                        <ExternalLink className="w-3.5 h-3.5 text-muted-foreground opacity-0 group-hover/link:opacity-100 transition-opacity flex-shrink-0 mt-1" />
-                      </a>
+                      </Link>
 
                       <div className="flex items-center gap-3 mt-2">
                         <Badge
