@@ -55,12 +55,29 @@ model User {
   password      String
   name          String?
   role          String   @default("user")  // user, admin
+  emailVerified Boolean  @default(false)   // 邮箱是否验证
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   subscriptions Subscription[]
   readHistory   ReadHistory[]
   bookmarks     Bookmark[]
   pushConfigs   PushConfig[]
+  verificationCodes VerificationCode[]
+}
+
+// 验证码
+model VerificationCode {
+  id        String   @id @default(cuid())
+  userId    String?
+  email     String
+  code      String
+  type      String   // REGISTER, RESET_PASSWORD, EMAIL_CHANGE
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@index([email, type])
+  @@index([code])
 }
 
 // 用户订阅源

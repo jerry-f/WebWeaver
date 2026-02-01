@@ -11,6 +11,51 @@ export default function RegisterPage() {
   const router = useRouter();
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [codeSent, setCodeSent] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [email, setEmail] = useState("");
+
+  // 发送验证码
+  const sendCode = async () => {
+    if (!email) {
+      setError("请先输入邮箱");
+      return;
+    }
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const res = await fetch("/api/auth/send-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, type: "REGISTER" }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || "发送失败");
+      } else {
+        setCodeSent(true);
+        // 60秒倒计时
+        setCountdown(60);
+        const timer = setInterval(() => {
+          setCountdown((prev) => {
+            if (prev <= 1) {
+              clearInterval(timer);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      }
+    } catch {
+      setError("发送失败，请重试");
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -19,9 +64,9 @@ export default function RegisterPage() {
 
     const formData = new FormData(e.currentTarget);
     const name = formData.get("name") as string;
-    const email = formData.get("email") as string;
     const password = formData.get("password") as string;
     const confirmPassword = formData.get("confirmPassword") as string;
+    const code = formData.get("code") as string;
 
     if (password !== confirmPassword) {
       setError("两次输入的密码不一致");
@@ -35,11 +80,17 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!code) {
+      setError("请输入验证码");
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password }),
+        body: JSON.stringify({ name, email, password, code }),
       });
 
       const data = await res.json();
@@ -86,11 +137,37 @@ export default function RegisterPage() {
               <label htmlFor="email" className="text-sm font-medium">
                 邮箱
               </label>
+              <div className="flex gap-2">
+                <Input
+                  id="email"
+                  name="email"
+                  type="email"
+                  placeholder="your@email.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={sendCode}
+                  disabled={loading || countdown > 0}
+                  className="shrink-0"
+                >
+                  {countdown > 0 ? `${countdown}s` : codeSent ? "重新发送" : "发送验证码"}
+                </Button>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label htmlFor="code" className="text-sm font-medium">
+                验证码
+              </label>
               <Input
-                id="email"
-                name="email"
-                type="email"
-                placeholder="your@email.com"
+                id="code"
+                name="code"
+                type="text"
+                placeholder="6位数字验证码"
+                maxLength={6}
                 required
               />
             </div>
