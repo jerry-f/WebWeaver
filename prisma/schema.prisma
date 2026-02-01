@@ -18,6 +18,7 @@ model Source {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   articles      Article[]
+  subscriptions Subscription[]
 }
 
 model Article {
@@ -39,6 +40,8 @@ model Article {
   category      String?  // 分类
   readingTime   Int?     // 阅读时间（分钟）
   summaryStatus String   @default("pending")  // pending/processing/completed/failed
+  readHistory   ReadHistory[]
+  bookmarks     Bookmark[]
 
   @@unique([sourceId, externalId])
   @@index([publishedAt])
@@ -47,11 +50,98 @@ model Article {
 }
 
 model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  password      String
+  name          String?
+  role          String   @default("user")  // user, admin
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  subscriptions Subscription[]
+  readHistory   ReadHistory[]
+  bookmarks     Bookmark[]
+  pushConfigs   PushConfig[]
+}
+
+// 用户订阅源
+model Subscription {
   id        String   @id @default(cuid())
-  email     String   @unique
-  password  String
-  name      String?
-  role      String   @default("user")  // user, admin
+  userId    String
+  sourceId  String
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source    Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  @@unique([userId, sourceId])
+}
+
+// 阅读历史
+model ReadHistory {
+  id        String   @id @default(cuid())
+  userId    String
+  articleId String
+  readAt    DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  @@unique([userId, articleId])
+}
+
+// 用户收藏
+model Bookmark {
+  id        String   @id @default(cuid())
+  userId    String
+  articleId String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  article   Article  @relation(fields: [articleId], references: [id], onDelete: Cascade)
+  @@unique([userId, articleId])
+}
+
+// 定时任务
+model Task {
+  id         String    @id @default(cuid())
+  name       String
+  type       String    // FETCH, SUMMARIZE, PUSH, CLEANUP
+  schedule   String    // cron 表达式
+  enabled    Boolean   @default(true)
+  lastRun    DateTime?
+  nextRun    DateTime?
+  lastStatus String?
+  lastError  String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  logs       TaskLog[]
+}
+
+// 任务执行日志
+model TaskLog {
+  id        String   @id @default(cuid())
+  taskId    String
+  status    String   // running, success, failed
+  message   String?
+  duration  Int?
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+}
+
+// 推送配置
+model PushConfig {
+  id       String  @id @default(cuid())
+  userId   String
+  type     String  // TELEGRAM, EMAIL, BARK
+  target   String
+  enabled  Boolean @default(true)
+  schedule String  @default("08:00")
+  user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  @@unique([userId, type])
+}
+
+// 每日统计
+model DailyStat {
+  id            String   @id @default(cuid())
+  date          DateTime @unique
+  articlesCount Int      @default(0)
+  sourcesCount  Int      @default(0)
+  usersCount    Int      @default(0)
+  pushCount     Int      @default(0)
+  createdAt     DateTime @default(now())
 }

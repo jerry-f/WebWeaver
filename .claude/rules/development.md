@@ -39,6 +39,15 @@
 - 业务组件放 `src/components/`
 - 页面专属组件放在对应路由目录下
 
+## Tailwind CSS v4 样式规范
+
+> ⚠️ 本项目使用 Tailwind v4，与 v3 配置方式不同
+
+- 使用 `@import "tailwindcss"` 而非 `@tailwind` 指令
+- 颜色在 CSS `@theme` 中定义，不在 tailwind.config.ts
+- 禁止 `@apply` 自定义颜色类，改用原生 CSS
+- 详见：[docs/Tailwind-CSS-v4-样式配置指南.md](../../docs/Tailwind-CSS-v4-样式配置指南.md)
+
 ## 数据库
 
 - Schema 修改后运行 `npm run db:push`

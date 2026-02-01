@@ -1,15 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { getServerSession } from 'next-auth'
+import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 
 export async function GET(req: NextRequest) {
+  const session = await getServerSession(authOptions)
+
   const { searchParams } = new URL(req.url)
   const sourceId = searchParams.get('sourceId')
   const unreadOnly = searchParams.get('unread') === 'true'
   const starredOnly = searchParams.get('starred') === 'true'
+  const subscribedOnly = searchParams.get('subscribed') === 'true'
   const search = searchParams.get('q')
   const limit = parseInt(searchParams.get('limit') || '50')
   const cursor = searchParams.get('cursor')
-  
+
   const where: Record<string, unknown> = {}
   if (sourceId) where.sourceId = sourceId
   if (unreadOnly) where.read = false
@@ -20,7 +25,17 @@ export async function GET(req: NextRequest) {
       { content: { contains: search } }
     ]
   }
-  
+
+  // 按用户订阅过滤文章
+  if (subscribedOnly && session?.user?.id) {
+    const subscriptions = await prisma.subscription.findMany({
+      where: { userId: session.user.id },
+      select: { sourceId: true }
+    })
+    const subscribedSourceIds = subscriptions.map(s => s.sourceId)
+    where.sourceId = { in: subscribedSourceIds }
+  }
+
   const articles = await prisma.article.findMany({
     where,
     orderBy: { publishedAt: 'desc' },
@@ -32,13 +47,13 @@ export async function GET(req: NextRequest) {
       }
     }
   })
-  
+
   let nextCursor: string | undefined
   if (articles.length > limit) {
     const next = articles.pop()
     nextCursor = next?.id
   }
-  
+
   return NextResponse.json({ articles, nextCursor })
 }
 
