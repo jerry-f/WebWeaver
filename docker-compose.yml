@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  # MailHog - 开发环境邮件测试服务
+  # Web UI: http://localhost:8025
+  # SMTP: localhost:1025
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: newsflow-mailhog
+    ports:
+      - "1025:1025"  # SMTP 端口
+      - "8025:8025"  # Web UI 端口
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 可选：后续可添加其他服务
+  # redis:
+  #   image: redis:alpine
+  #   container_name: newsflow-redis
+  #   ports:
+  #     - "6379:6379"
+  #   restart: unless-stopped
