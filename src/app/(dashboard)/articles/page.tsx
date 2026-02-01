@@ -1,24 +1,22 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect, Suspense } from 'react'
-import { useRouter } from 'next/navigation'
-import { Badge } from '@/components/ui/badge'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { cn, timeAgo } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import {
   Newspaper,
-  Clock,
   Star,
   Search,
   ChevronLeft,
   ChevronRight,
   BookOpen,
-  BookOpenCheck,
   Loader2,
   X,
   Filter,
   ChevronDown
 } from 'lucide-react'
+import ArticleListItem, { ArticleItem } from '@/components/article-list-item'
 
 interface Source {
   id?: string
@@ -26,19 +24,10 @@ interface Source {
   category?: string
 }
 
-interface Article {
-  id: string
-  title: string
+interface Article extends ArticleItem {
   content?: string
-  summary?: string
-  url: string
   imageUrl?: string
   author?: string
-  publishedAt?: string
-  fetchedAt?: string
-  read: boolean
-  starred: boolean
-  source: Source
 }
 
 // 状态筛选
@@ -60,6 +49,7 @@ const categories = [
 
 function ArticlesContent() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const listRef = useRef<HTMLDivElement>(null)
 
   // 数据状态
@@ -68,12 +58,25 @@ function ArticlesContent() {
   const [loading, setLoading] = useState(true)
   const [focusIndex, setFocusIndex] = useState(0)
 
-  // 筛选状态
-  const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'starred'>('all')
-  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([])
-  const [selectedCategories, setSelectedCategories] = useState<string[]>([])
-  const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
+  // 从 URL 参数初始化筛选状态
+  const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'starred'>(() => {
+    const status = searchParams.get('status')
+    if (status === 'unread' || status === 'starred') return status
+    return 'all'
+  })
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>(() => {
+    const sourceIds = searchParams.get('sources')
+    return sourceIds ? sourceIds.split(',').filter(Boolean) : []
+  })
+  const [selectedCategories, setSelectedCategories] = useState<string[]>(() => {
+    const cats = searchParams.get('categories')
+    return cats ? cats.split(',').filter(Boolean) : []
+  })
+  const [search, setSearch] = useState(() => searchParams.get('q') || '')
+  const [page, setPage] = useState(() => {
+    const p = searchParams.get('page')
+    return p ? parseInt(p, 10) : 1
+  })
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
 
@@ -82,6 +85,31 @@ function ArticlesContent() {
 
   // 计算当前激活的筛选数量
   const activeFilterCount = selectedSourceIds.length + selectedCategories.length
+
+  // 同步筛选条件到 URL
+  const updateURL = useCallback((params: {
+    status?: string
+    sources?: string[]
+    categories?: string[]
+    q?: string
+    page?: number
+  }) => {
+    const url = new URLSearchParams()
+    const status = params.status ?? statusFilter
+    const srcIds = params.sources ?? selectedSourceIds
+    const cats = params.categories ?? selectedCategories
+    const q = params.q ?? search
+    const p = params.page ?? page
+
+    if (status !== 'all') url.set('status', status)
+    if (srcIds.length > 0) url.set('sources', srcIds.join(','))
+    if (cats.length > 0) url.set('categories', cats.join(','))
+    if (q) url.set('q', q)
+    if (p > 1) url.set('page', String(p))
+
+    const queryString = url.toString()
+    router.replace(`/articles${queryString ? '?' + queryString : ''}`, { scroll: false })
+  }, [router, statusFilter, selectedSourceIds, selectedCategories, search, page])
 
   // 获取来源列表
   useEffect(() => {
@@ -126,7 +154,8 @@ function ArticlesContent() {
     setSelectedSourceIds([])
     setSelectedCategories([])
     setPage(1)
-  }, [])
+    updateURL({ sources: [], categories: [], page: 1 })
+  }, [updateURL])
 
   // 切换收藏
   const toggleStarred = useCallback(async (article: Article, e: React.MouseEvent) => {
@@ -156,7 +185,18 @@ function ArticlesContent() {
     ))
   }, [])
 
-  // 选择文章 - 跳转到详情页
+  // 构建当前筛选参数的查询字符串（用于跳转详情页时携带）
+  const buildFilterQuery = useCallback(() => {
+    const params = new URLSearchParams()
+    if (statusFilter !== 'all') params.set('status', statusFilter)
+    if (selectedSourceIds.length > 0) params.set('sources', selectedSourceIds.join(','))
+    if (selectedCategories.length > 0) params.set('categories', selectedCategories.join(','))
+    if (search) params.set('q', search)
+    if (page > 1) params.set('page', String(page))
+    return params.toString()
+  }, [statusFilter, selectedSourceIds, selectedCategories, search, page])
+
+  // 选择文章 - 跳转到详情页（携带筛选参数）
   const selectArticle = useCallback((article: Article, index: number) => {
     setFocusIndex(index)
 
@@ -173,9 +213,10 @@ function ArticlesContent() {
       })
     }
 
-    // 跳转到详情页
-    router.push(`/article-detail/${article.id}`)
-  }, [router])
+    // 跳转到详情页，携带筛选参数
+    const filterQuery = buildFilterQuery()
+    router.push(`/article-detail/${article.id}${filterQuery ? '?' + filterQuery : ''}`)
+  }, [router, buildFilterQuery])
 
   // 键盘导航
   useEffect(() => {
@@ -256,12 +297,19 @@ function ArticlesContent() {
                 type="text"
                 placeholder="搜索文章... (按 / 聚焦)"
                 value={search}
-                onChange={e => { setSearch(e.target.value); setPage(1) }}
+                onChange={e => {
+                  setSearch(e.target.value)
+                  setPage(1)
+                  updateURL({ q: e.target.value, page: 1 })
+                }}
                 className="w-full h-8 pl-8 pr-8 text-sm bg-muted/40 border-0 rounded-md placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 focus:bg-background transition-all"
               />
               {search && (
                 <button
-                  onClick={() => setSearch('')}
+                  onClick={() => {
+                    setSearch('')
+                    updateURL({ q: '' })
+                  }}
                   className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground/60 hover:text-foreground transition-colors"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -277,7 +325,12 @@ function ArticlesContent() {
               {statusFilters.map(f => (
                 <button
                   key={f.value}
-                  onClick={() => { setStatusFilter(f.value as typeof statusFilter); setPage(1) }}
+                  onClick={() => {
+                    const newStatus = f.value as typeof statusFilter
+                    setStatusFilter(newStatus)
+                    setPage(1)
+                    updateURL({ status: newStatus, page: 1 })
+                  }}
                   className={cn(
                     "flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-all",
                     statusFilter === f.value
@@ -327,7 +380,11 @@ function ArticlesContent() {
                   <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium w-8">来源</span>
                   <div className="flex flex-wrap gap-1">
                     <button
-                      onClick={() => { setSelectedSourceIds([]); setPage(1) }}
+                      onClick={() => {
+                        setSelectedSourceIds([])
+                        setPage(1)
+                        updateURL({ sources: [], page: 1 })
+                      }}
                       className={cn(
                         "px-2 py-0.5 text-[11px] rounded transition-all",
                         selectedSourceIds.length === 0
@@ -343,12 +400,12 @@ function ArticlesContent() {
                         <button
                           key={s.id}
                           onClick={() => {
-                            if (isSelected) {
-                              setSelectedSourceIds(prev => prev.filter(id => id !== s.id))
-                            } else {
-                              setSelectedSourceIds(prev => [...prev, s.id || ''])
-                            }
+                            const newIds = isSelected
+                              ? selectedSourceIds.filter(id => id !== s.id)
+                              : [...selectedSourceIds, s.id || '']
+                            setSelectedSourceIds(newIds)
                             setPage(1)
+                            updateURL({ sources: newIds, page: 1 })
                           }}
                           className={cn(
                             "px-2 py-0.5 text-[11px] rounded transition-all max-w-[100px] truncate",
@@ -369,7 +426,11 @@ function ArticlesContent() {
                   <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 font-medium w-8">分类</span>
                   <div className="flex flex-wrap gap-1">
                     <button
-                      onClick={() => { setSelectedCategories([]); setPage(1) }}
+                      onClick={() => {
+                        setSelectedCategories([])
+                        setPage(1)
+                        updateURL({ categories: [], page: 1 })
+                      }}
                       className={cn(
                         "px-2 py-0.5 text-[11px] rounded transition-all",
                         selectedCategories.length === 0
@@ -385,12 +446,12 @@ function ArticlesContent() {
                         <button
                           key={c.value}
                           onClick={() => {
-                            if (isSelected) {
-                              setSelectedCategories(prev => prev.filter(v => v !== c.value))
-                            } else {
-                              setSelectedCategories(prev => [...prev, c.value])
-                            }
+                            const newCats = isSelected
+                              ? selectedCategories.filter(v => v !== c.value)
+                              : [...selectedCategories, c.value]
+                            setSelectedCategories(newCats)
                             setPage(1)
+                            updateURL({ categories: newCats, page: 1 })
                           }}
                           className={cn(
                             "px-2 py-0.5 text-[11px] rounded transition-all",
@@ -430,8 +491,10 @@ function ArticlesContent() {
                     onClick={() => {
                       const sourceToRemove = sources.find(s => s.name === name)
                       if (sourceToRemove) {
-                        setSelectedSourceIds(prev => prev.filter(id => id !== sourceToRemove.id))
+                        const newIds = selectedSourceIds.filter(id => id !== sourceToRemove.id)
+                        setSelectedSourceIds(newIds)
                         setPage(1)
+                        updateURL({ sources: newIds, page: 1 })
                       }
                     }}
                     className="hover:text-primary/70"
@@ -447,8 +510,10 @@ function ArticlesContent() {
                     onClick={() => {
                       const catToRemove = categories.find(c => c.label === name)
                       if (catToRemove) {
-                        setSelectedCategories(prev => prev.filter(v => v !== catToRemove.value))
+                        const newCats = selectedCategories.filter(v => v !== catToRemove.value)
+                        setSelectedCategories(newCats)
                         setPage(1)
+                        updateURL({ categories: newCats, page: 1 })
                       }
                     }}
                     className="hover:text-primary/70"
@@ -485,63 +550,14 @@ function ArticlesContent() {
             </div>
           ) : (
             articles.map((article, index) => (
-              <div
+              <ArticleListItem
                 key={article.id}
+                article={article}
+                isFocused={index === focusIndex}
                 onClick={() => selectArticle(article, index)}
-                className={cn(
-                  "group px-4 py-3.5 border-b border-border/30 cursor-pointer transition-all duration-150",
-                  article.read && "opacity-55",
-                  index === focusIndex && "bg-primary/5 border-l-2 border-l-primary -ml-[2px] pl-[calc(1rem+2px)]",
-                  index !== focusIndex && "hover:bg-muted/30"
-                )}
-              >
-                <div className="flex gap-3">
-                  {/* 内容 */}
-                  <div className="flex-1 min-w-0">
-                    <h3 className={cn(
-                      "text-[15px] font-medium leading-snug line-clamp-2 transition-colors",
-                      "text-foreground group-hover:text-primary"
-                    )}>
-                      {article.title}
-                    </h3>
-                    <div className="flex items-center gap-2 mt-1.5">
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4 font-normal bg-muted/50">
-                        {article.source.name}
-                      </Badge>
-                      <span className="text-[10px] text-muted-foreground/70 flex items-center gap-0.5">
-                        <Clock className="w-3 h-3" />
-                        {timeAgo(article.fetchedAt || article.publishedAt || new Date().toISOString())}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* 操作按钮 */}
-                  <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={(e) => toggleStarred(article, e)}
-                      className={cn(
-                        "p-1.5 rounded-md transition-colors",
-                        article.starred ? "text-amber-500 opacity-100" : "hover:text-amber-500 hover:bg-muted/50"
-                      )}
-                    >
-                      <Star className={cn("w-4 h-4", article.starred && "fill-current")} />
-                    </button>
-                    <button
-                      onClick={(e) => toggleRead(article, e)}
-                      className="p-1.5 rounded-md hover:text-primary hover:bg-muted/50 transition-colors"
-                    >
-                      {article.read ? <BookOpenCheck className="w-4 h-4" /> : <BookOpen className="w-4 h-4" />}
-                    </button>
-                  </div>
-
-                  {/* 收藏标记（始终可见） */}
-                  {article.starred && (
-                    <div className="flex-shrink-0 group-hover:hidden">
-                      <Star className="w-4 h-4 text-amber-500 fill-current" />
-                    </div>
-                  )}
-                </div>
-              </div>
+                onToggleStarred={(e) => toggleStarred(article, e)}
+                onToggleRead={(e) => toggleRead(article, e)}
+              />
             ))
           )}
         </div>
@@ -560,7 +576,11 @@ function ArticlesContent() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setPage(p => Math.max(1, p - 1))}
+                onClick={() => {
+                  const newPage = Math.max(1, page - 1)
+                  setPage(newPage)
+                  updateURL({ page: newPage })
+                }}
                 disabled={page === 1}
                 className="h-6 w-6 p-0"
               >
@@ -572,7 +592,11 @@ function ArticlesContent() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                onClick={() => {
+                  const newPage = Math.min(totalPages, page + 1)
+                  setPage(newPage)
+                  updateURL({ page: newPage })
+                }}
                 disabled={page === totalPages}
                 className="h-6 w-6 p-0"
               >

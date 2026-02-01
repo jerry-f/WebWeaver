@@ -1,7 +1,7 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
-import { ExternalLink, Loader2 } from 'lucide-react'
+import { ExternalLink, Loader2, Sparkles } from 'lucide-react'
 
 interface ArticleContentProps {
   title: string
@@ -76,6 +76,19 @@ export default function ArticleContent({
                 (e.currentTarget.parentElement as HTMLElement).style.display = 'none'
               }}
             />
+          </div>
+        )}
+
+        {/* AI 摘要 */}
+        {summary && (
+          <div className="mb-6 p-4 bg-primary/5 border border-primary/20 rounded-lg">
+            <div className="flex items-center gap-2 text-primary mb-2">
+              <Sparkles className="w-4 h-4" />
+              <span className="text-sm font-medium">AI 摘要</span>
+            </div>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {summary}
+            </p>
           </div>
         )}
 

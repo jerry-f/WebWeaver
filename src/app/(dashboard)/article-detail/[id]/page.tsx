@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useRouter, useParams } from 'next/navigation'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Loader2 } from 'lucide-react'
 import ArticleCompare from '@/components/article-compare'
@@ -44,7 +44,11 @@ interface ArticleVersion {
 export default function ArticleDetailPage() {
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const articleId = params.id as string
+
+  // 从 URL 获取筛选参数
+  const filterQuery = searchParams.toString()
 
   // 状态
   const [article, setArticle] = useState<Article | null>(null)
@@ -61,9 +65,26 @@ export default function ArticleDetailPage() {
 
   const listRef = useRef<HTMLDivElement>(null)
 
-  // 获取文章列表（用于侧边栏快速切换）
+  // 获取文章列表（使用相同的筛选条件）
   useEffect(() => {
-    fetch('/api/articles?limit=50')
+    // 构建 API 请求参数
+    const apiParams = new URLSearchParams()
+    apiParams.set('limit', '50')
+
+    const status = searchParams.get('status')
+    if (status === 'unread') apiParams.set('unread', 'true')
+    if (status === 'starred') apiParams.set('starred', 'true')
+
+    const sources = searchParams.get('sources')
+    if (sources) apiParams.set('sourceId', sources)
+
+    const categories = searchParams.get('categories')
+    if (categories) apiParams.set('category', categories)
+
+    const q = searchParams.get('q')
+    if (q) apiParams.set('q', q)
+
+    fetch(`/api/articles?${apiParams}`)
       .then(res => res.json())
       .then(data => {
         const list = data.articles || []
@@ -72,7 +93,7 @@ export default function ArticleDetailPage() {
         setCurrentIndex(idx)
       })
       .catch(console.error)
-  }, [articleId])
+  }, [articleId, searchParams])
 
   // 获取当前文章详情
   useEffect(() => {
@@ -162,15 +183,15 @@ export default function ArticleDetailPage() {
     }
   }, [article, refreshing])
 
-  // 返回列表
+  // 返回列表（保持筛选条件）
   const goBack = useCallback(() => {
-    router.push('/articles')
-  }, [router])
+    router.push(`/articles${filterQuery ? '?' + filterQuery : ''}`)
+  }, [router, filterQuery])
 
-  // 切换到其他文章
+  // 切换到其他文章（保持筛选条件）
   const navigateToArticle = useCallback((id: string) => {
-    router.push(`/article-detail/${id}`)
-  }, [router])
+    router.push(`/article-detail/${id}${filterQuery ? '?' + filterQuery : ''}`)
+  }, [router, filterQuery])
 
   // 上一篇/下一篇
   const goPrev = useCallback(() => {

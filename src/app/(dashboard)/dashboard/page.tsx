@@ -147,7 +147,7 @@ export default async function DashboardPage() {
                     {/* 内容 */}
                     <div className="flex-1 min-w-0">
                       <Link
-                        href={`/articles?id=${article.id}`}
+                        href={`/article-detail/${article.id}`}
                         className="group/link flex items-start gap-2"
                       >
                         <h3 className="font-medium text-foreground group-hover/link:text-primary line-clamp-1 transition-colors">

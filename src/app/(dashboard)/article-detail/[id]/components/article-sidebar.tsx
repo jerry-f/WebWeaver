@@ -2,20 +2,12 @@
 
 import { RefObject } from 'react'
 import { Button } from '@/components/ui/button'
-import { cn, timeAgo } from '@/lib/utils'
+import { cn } from '@/lib/utils'
 import { PanelLeftClose } from 'lucide-react'
-
-interface Article {
-  id: string
-  title: string
-  read: boolean
-  fetchedAt?: string
-  publishedAt?: string
-  source: { name: string }
-}
+import ArticleListItem, { ArticleItem } from '@/components/article-list-item'
 
 interface ArticleSidebarProps {
-  articles: Article[]
+  articles: ArticleItem[]
   currentArticleId: string
   sidebarOpen: boolean
   onClose: () => void
@@ -56,28 +48,14 @@ export default function ArticleSidebar({
         {/* 文章列表 */}
         <div ref={listRef} className="flex-1 overflow-auto">
           {articles.map((article) => (
-            <div
+            <ArticleListItem
               key={article.id}
+              article={article}
+              isActive={article.id === currentArticleId}
+              compact={true}
+              showActions={false}
               onClick={() => onNavigate(article.id)}
-              className={cn(
-                "px-3 py-2.5 border-b border-border/30 cursor-pointer transition-all duration-150",
-                article.read && "opacity-50",
-                article.id === currentArticleId && "bg-primary/10 border-l-2 border-l-primary",
-                article.id !== currentArticleId && "hover:bg-muted/30"
-              )}
-            >
-              <h4 className={cn(
-                "text-sm font-medium line-clamp-2 mb-1",
-                article.id === currentArticleId ? "text-primary" : "text-foreground"
-              )}>
-                {article.title}
-              </h4>
-              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                <span>{article.source.name}</span>
-                <span>·</span>
-                <span>{timeAgo(article.fetchedAt || article.publishedAt || '')}</span>
-              </div>
-            </div>
+            />
           ))}
         </div>
       </div>
