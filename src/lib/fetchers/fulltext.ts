@@ -1,5 +1,7 @@
 import { Readability } from '@mozilla/readability'
 import { JSDOM } from 'jsdom'
+import { sanitizeHtml } from './processors/html-sanitizer'
+import { processImages, type ExtractedImage } from './processors/image-processor'
 
 /**
  * 全文抓取结果
@@ -17,6 +19,8 @@ export interface FullTextResult {
   byline?: string
   /** 网站名称 */
   siteName?: string
+  /** 提取的图片列表 */
+  images?: ExtractedImage[]
 }
 
 /**
@@ -71,8 +75,8 @@ export async function fetchFullText(url: string): Promise<FullTextResult | null>
     // ========== 第 2.5 步：处理懒加载图片 ==========
     // 很多网站使用懒加载，真实图片 URL 在 data-src 等属性中
     const lazyAttributes = ['data-src', 'data-lazy-src', 'data-original', 'data-actualsrc']
-    const images = document.querySelectorAll('img')
-    images.forEach((img) => {
+    const imgElements = document.querySelectorAll('img')
+    imgElements.forEach((img) => {
       // 检查懒加载属性
       for (const attr of lazyAttributes) {
         const lazySrc = img.getAttribute(attr)
@@ -97,11 +101,19 @@ export async function fetchFullText(url: string): Promise<FullTextResult | null>
     // 如果无法解析出文章（可能是非文章页面），返回 null
     if (!article || !article.content) return null
 
-    // ========== 第四步：返回提取结果 ==========
+    // ========== 第五步：处理图片（URL 绝对化、懒加载修复） ==========
+    const { html: processedHtml, images } = processImages(article.content, url, {
+      enableProxy: false,  // 暂不启用代理，后续 Phase 会开启
+      lazyAttributes: lazyAttributes
+    })
+
+    // ========== 第六步：HTML 净化（防 XSS） ==========
+    const sanitizedHtml = sanitizeHtml(processedHtml)
+
+    // ========== 第七步：返回提取结果 ==========
     return {
-      // content 是保留 HTML 标签的内容（用于展示）
-      // 关键改进：使用 article.content 而非 article.textContent
-      content: article.content,
+      // content 是经过净化的 HTML 内容（用于展示）
+      content: sanitizedHtml,
       // textContent 是纯文本（用于 AI 处理、搜索、阅读时间计算）
       textContent: article.textContent?.trim() || '',
       // 提取到的文章标题
@@ -111,7 +123,9 @@ export async function fetchFullText(url: string): Promise<FullTextResult | null>
       // 作者信息
       byline: article.byline || undefined,
       // 网站名称
-      siteName: article.siteName || undefined
+      siteName: article.siteName || undefined,
+      // 提取的图片列表
+      images
     }
   } catch (e) {
     // 捕获所有错误（网络错误、超时、解析错误等）
