@@ -23,7 +23,7 @@ async function getAdminStats() {
 export default async function AdminPage() {
   const session = await auth();
 
-  if (!session || (session.user.role !== "ADMIN" && session.user.role !== "admin")) {
+  if (!session || session.user.role !== "admin") {
     redirect("/dashboard");
   }
 
@@ -120,9 +120,9 @@ export default async function AdminPage() {
                     </td>
                     <td className="py-3 px-4">
                       <Badge
-                        variant={user.role === "ADMIN" ? "default" : "secondary"}
+                        variant={user.role === "admin" ? "default" : "secondary"}
                       >
-                        {user.role === "ADMIN" ? "管理员" : "用户"}
+                        {user.role === "admin" ? "管理员" : "用户"}
                       </Badge>
                     </td>
                     <td className="py-3 px-4 text-muted-foreground">
