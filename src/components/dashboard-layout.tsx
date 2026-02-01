@@ -16,6 +16,8 @@ import {
   Users,
   ListTodo,
   BookOpen,
+  PanelLeftClose,
+  PanelLeft,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -45,6 +47,7 @@ export default function DashboardLayout({
   const pathname = usePathname();
   const { data: session } = useSession();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const isAdmin = session?.user?.role === "admin";
   const allNavigation = isAdmin
@@ -64,19 +67,26 @@ export default function DashboardLayout({
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 w-64 transform bg-sidebar border-r border-sidebar-border shadow-xl transition-transform duration-300 ease-out lg:translate-x-0",
-          sidebarOpen ? "translate-x-0" : "-translate-x-full"
+          "fixed inset-y-0 left-0 z-50 transform bg-sidebar border-r border-sidebar-border shadow-xl transition-all duration-300 ease-out lg:translate-x-0",
+          sidebarOpen ? "translate-x-0" : "-translate-x-full",
+          sidebarCollapsed ? "lg:w-16" : "lg:w-64",
+          "w-64"
         )}
       >
         {/* Logo */}
-        <div className="flex h-16 items-center justify-between px-6 border-b border-sidebar-border">
+        <div className={cn(
+          "flex h-16 items-center border-b border-sidebar-border transition-all duration-300",
+          sidebarCollapsed ? "justify-center px-2" : "justify-between px-6"
+        )}>
           <Link href="/dashboard" className="flex items-center space-x-3 group">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20 group-hover:shadow-primary/40 transition-shadow">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-accent flex items-center justify-center shadow-lg shadow-primary/20 group-hover:shadow-primary/40 transition-shadow flex-shrink-0">
               <Newspaper className="w-5 h-5 text-primary-foreground" />
             </div>
-            <span className="text-xl font-serif font-bold text-foreground">
-              NewsFlow
-            </span>
+            {!sidebarCollapsed && (
+              <span className="text-xl font-serif font-bold text-foreground">
+                NewsFlow
+              </span>
+            )}
           </Link>
           <button
             className="lg:hidden p-1 rounded-md hover:bg-secondary transition-colors"
@@ -87,55 +97,107 @@ export default function DashboardLayout({
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto scrollbar-thin">
+        <nav className={cn(
+          "flex-1 py-4 space-y-1 overflow-y-auto scrollbar-thin transition-all duration-300",
+          sidebarCollapsed ? "px-2" : "px-3"
+        )}>
           {allNavigation.map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
             return (
               <Link
                 key={item.name}
                 href={item.href}
+                title={sidebarCollapsed ? item.name : undefined}
                 className={cn(
-                  "flex items-center px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
+                  "flex items-center rounded-lg text-sm font-medium transition-all duration-200",
+                  sidebarCollapsed ? "justify-center px-2 py-2.5" : "px-3 py-2.5",
                   isActive
-                    ? "bg-primary/10 text-primary border-l-2 border-primary pl-[10px]"
-                    : "text-muted-foreground hover:bg-secondary hover:text-foreground"
+                    ? "bg-primary/10 text-primary border-l-2 border-primary"
+                    : "text-muted-foreground hover:bg-secondary hover:text-foreground",
+                  isActive && !sidebarCollapsed && "pl-[10px]"
                 )}
               >
-                <item.icon className={cn("w-5 h-5 mr-3 flex-shrink-0", isActive && "text-primary")} />
-                {item.name}
+                <item.icon className={cn(
+                  "w-5 h-5 flex-shrink-0",
+                  isActive && "text-primary",
+                  !sidebarCollapsed && "mr-3"
+                )} />
+                {!sidebarCollapsed && item.name}
               </Link>
             );
           })}
         </nav>
 
+        {/* Collapse toggle button - desktop only */}
+        <div className="hidden lg:flex justify-center py-2 border-t border-sidebar-border">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setSidebarCollapsed(prev => !prev)}
+            className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+            title={sidebarCollapsed ? "展开侧边栏" : "收起侧边栏"}
+          >
+            {sidebarCollapsed ? (
+              <PanelLeft className="w-4 h-4" />
+            ) : (
+              <PanelLeftClose className="w-4 h-4" />
+            )}
+          </Button>
+        </div>
+
         {/* User section */}
-        <div className="p-4 border-t border-sidebar-border">
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-primary-foreground text-sm font-semibold shadow-md">
-              {session?.user?.name?.[0] || session?.user?.email?.[0] || "U"}
+        <div className={cn(
+          "border-t border-sidebar-border transition-all duration-300",
+          sidebarCollapsed ? "p-2" : "p-4"
+        )}>
+          {sidebarCollapsed ? (
+            // 折叠状态：只显示头像
+            <div className="flex flex-col items-center gap-2">
+              <div className="w-9 h-9 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-primary-foreground text-sm font-semibold shadow-md">
+                {session?.user?.name?.[0] || session?.user?.email?.[0] || "U"}
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                onClick={() => signOut({ callbackUrl: "/login" })}
+                title="退出登录"
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-foreground truncate">
-                {session?.user?.name || "用户"}
-              </p>
-              <p className="text-xs text-muted-foreground truncate">
-                {session?.user?.email}
-              </p>
+          ) : (
+            // 展开状态：显示完整信息
+            <div className="flex items-center space-x-3">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-primary-foreground text-sm font-semibold shadow-md">
+                {session?.user?.name?.[0] || session?.user?.email?.[0] || "U"}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-foreground truncate">
+                  {session?.user?.name || "用户"}
+                </p>
+                <p className="text-xs text-muted-foreground truncate">
+                  {session?.user?.email}
+                </p>
+              </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                onClick={() => signOut({ callbackUrl: "/login" })}
+              >
+                <LogOut className="w-4 h-4" />
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 text-muted-foreground hover:text-destructive hover:bg-destructive/10"
-              onClick={() => signOut({ callbackUrl: "/login" })}
-            >
-              <LogOut className="w-4 h-4" />
-            </Button>
-          </div>
+          )}
         </div>
       </aside>
 
       {/* Main content */}
-      <div className="lg:pl-64 min-h-screen flex flex-col">
+      <div className={cn(
+        "min-h-screen flex flex-col transition-all duration-300",
+        sidebarCollapsed ? "lg:pl-16" : "lg:pl-64"
+      )}>
         {/* Top bar */}
         <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-background/80 backdrop-blur-md px-4 lg:px-6">
           <button
