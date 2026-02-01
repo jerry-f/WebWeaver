@@ -97,7 +97,7 @@ services:
 
   # imgproxy 图片代理服务
   # 高性能图片处理：防盗链绕过、格式转换（WebP/AVIF）、缩放
-  # HTTP: http://localhost:8889
+  # HTTP: http://localhost:8888
   imgproxy:
     image: darthsim/imgproxy:latest
     container_name: newsflow-imgproxy
@@ -107,6 +107,8 @@ services:
       # 签名密钥（生产环境需更换）
       - IMGPROXY_KEY=${IMGPROXY_KEY:-736563726574}
       - IMGPROXY_SALT=${IMGPROXY_SALT:-73616c74}
+      # 本地文件系统根目录（用于缓存）
+      - IMGPROXY_LOCAL_FILESYSTEM_ROOT=/images
       # 允许不安全的 URL（开发环境）
       - IMGPROXY_ALLOW_INSECURE_URL=true
       # 启用 ETag 缓存
@@ -127,7 +129,9 @@ services:
       - IMGPROXY_WRITE_TIMEOUT=10
       - IMGPROXY_DOWNLOAD_TIMEOUT=10
     ports:
-      - "8889:8080"
+      - "8888:8080"
+    volumes:
+      - ./cache/images:/images
     deploy:
       resources:
         limits:
