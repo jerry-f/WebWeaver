@@ -116,6 +116,56 @@ func (c *CycleTLSClient) FetchWithReferer(ctx context.Context, url, referer stri
 	return result
 }
 
+// FetchWithHeaders 带自定义 Headers 抓取（支持 Cookie）
+func (c *CycleTLSClient) FetchWithHeaders(ctx context.Context, url string, customHeaders map[string]string) *FetchResult {
+	start := time.Now()
+	result := &FetchResult{URL: url, Strategy: "cycletls"}
+
+	// 合并默认 Headers 和自定义 Headers
+	headers := map[string]string{
+		"Accept":          "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+		"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+		"Accept-Encoding": "gzip, deflate, br",
+		"Connection":      "keep-alive",
+		"Cache-Control":   "no-cache",
+	}
+
+	// 自定义 Headers 覆盖默认值
+	for k, v := range customHeaders {
+		headers[k] = v
+	}
+
+	options := cycletls.Options{
+		Body:      "",
+		Ja3:       c.ja3,
+		UserAgent: c.userAgent,
+		Headers:   headers,
+		Timeout:   c.timeout,
+	}
+
+	resp, err := c.client.Do(url, options, "GET")
+	if err != nil {
+		result.Error = err
+		result.Duration = time.Since(start)
+		return result
+	}
+
+	result.FinalURL = resp.FinalUrl
+	if result.FinalURL == "" {
+		result.FinalURL = url
+	}
+
+	if resp.Status != 200 {
+		result.Error = &HTTPError{StatusCode: resp.Status}
+		result.Duration = time.Since(start)
+		return result
+	}
+
+	result.HTML = resp.Body
+	result.Duration = time.Since(start)
+	return result
+}
+
 // Close 关闭客户端
 func (c *CycleTLSClient) Close() {
 	c.client.Close()

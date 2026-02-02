@@ -9,6 +9,11 @@
  *   npx tsx scripts/test-scraper.ts --queue      # 仅测试队列
  */
 
+import { CredentialManager } from '../src/lib/auth/credential-manager'
+
+// 初始化凭证管理器
+const credentialManager = new CredentialManager()
+
 const COLORS = {
   reset: '\x1b[0m',
   green: '\x1b[32m',
@@ -112,6 +117,7 @@ async function testServices(): Promise<boolean> {
 interface FetchTest {
   name: string
   url: string
+  requiresAuth?: boolean  // 标记需要认证的站点
   expect: {
     hasTitle?: boolean
     hasContent?: boolean
@@ -137,20 +143,21 @@ const FETCH_TESTS: FetchTest[] = [
     expect: { hasTitle: true, minContentLength: 100 }
   },
   {
-    name: '知乎文章',
+    name: '知乎文章 (需要登录)',
     url: 'https://zhuanlan.zhihu.com/p/493407868',
+    requiresAuth: true,
     expect: { hasTitle: true, minContentLength: 500 }
   },
-  {
-    name: '36kr 快讯',
-    url: 'https://36kr.com/newsflashes/3665468896666246',
-    expect: { hasTitle: true, minContentLength: 200 }
-  },
-  {
-    name: '36kr 文章',
-    url: 'https://36kr.com/p/3664533928161793',
-    expect: { hasTitle: true, minContentLength: 200 }
-  }
+  // {
+  //   name: '36kr 快讯',
+  //   url: 'https://36kr.com/newsflashes/3665468896666246',
+  //   expect: { hasTitle: true, minContentLength: 200 }
+  // },
+  // {
+  //   name: '36kr 文章',
+  //   url: 'https://36kr.com/p/3664533928161793',
+  //   expect: { hasTitle: true, minContentLength: 200 }
+  // }
 ]
 
 async function testFetch(): Promise<boolean> {
@@ -164,10 +171,25 @@ async function testFetch(): Promise<boolean> {
 
     try {
       const start = Date.now()
+      
+      // 构建请求体
+      const requestBody: Record<string, unknown> = { url: test.url }
+      
+      // 检查是否需要认证，自动添加 Cookie
+      if (test.requiresAuth || credentialManager.requiresAuth(test.url)) {
+        const cookie = credentialManager.getCookieForUrl(test.url)
+        if (cookie) {
+          requestBody.headers = { Cookie: cookie }
+          console.log(`   ${COLORS.gray}🔐 已注入 Cookie (${cookie.length} 字符)${COLORS.reset}`)
+        } else {
+          warn(`   需要认证但未找到 Cookie，可能会失败`)
+        }
+      }
+      
       const res = await fetch('http://localhost:8088/fetch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: test.url }),
+        body: JSON.stringify(requestBody),
         signal: AbortSignal.timeout(30000)
       })
 

@@ -98,3 +98,55 @@ func (c *StandardClient) Fetch(ctx context.Context, url string) *FetchResult {
 	result.Duration = time.Since(start)
 	return result
 }
+
+// FetchWithHeaders 使用标准客户端抓取（带自定义 Headers）
+func (c *StandardClient) FetchWithHeaders(ctx context.Context, url string, headers map[string]string) *FetchResult {
+	start := time.Now()
+	result := &FetchResult{URL: url, Strategy: "standard"}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		result.Error = err
+		result.Duration = time.Since(start)
+		return result
+	}
+
+	// 设置默认 Headers
+	req.Header.Set("User-Agent", c.userAgent)
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+	req.Header.Set("Accept-Encoding", "gzip, deflate")
+	req.Header.Set("Connection", "keep-alive")
+
+	// 自定义 Headers 覆盖默认值
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		result.Error = err
+		result.Duration = time.Since(start)
+		return result
+	}
+	defer resp.Body.Close()
+
+	result.FinalURL = resp.Request.URL.String()
+
+	if resp.StatusCode != http.StatusOK {
+		result.Error = &HTTPError{StatusCode: resp.StatusCode}
+		result.Duration = time.Since(start)
+		return result
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		result.Error = err
+		result.Duration = time.Since(start)
+		return result
+	}
+
+	result.HTML = string(body)
+	result.Duration = time.Since(start)
+	return result
+}

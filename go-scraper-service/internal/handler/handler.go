@@ -193,9 +193,12 @@ func (h *Handler) fetchAndExtract(ctx context.Context, req FetchRequest) FetchRe
 	start := time.Now()
 	resp := FetchResponse{URL: req.URL}
 
-	// 根据策略抓取
+	// 根据策略和参数选择抓取方式
 	var fetchResult *fetcher.FetchResult
-	if req.Strategy != "" {
+	if len(req.Headers) > 0 {
+		// 有自定义 Headers（包括 Cookie），使用带 Headers 的方法
+		fetchResult = h.fetcher.FetchWithHeaders(ctx, req.URL, req.Headers)
+	} else if req.Strategy != "" {
 		fetchResult = h.fetcher.FetchWithStrategy(ctx, req.URL, req.Strategy)
 	} else if req.Referer != "" {
 		fetchResult = h.fetcher.FetchWithReferer(ctx, req.URL, req.Referer)

@@ -95,6 +95,21 @@ func (f *Fetcher) FetchWithStrategy(ctx context.Context, url, strategy string) *
 	}
 }
 
+// FetchWithHeaders 带自定义 Headers 抓取（支持 Cookie）
+func (f *Fetcher) FetchWithHeaders(ctx context.Context, url string, headers map[string]string) *FetchResult {
+	// 优先使用 CycleTLS（TLS 指纹伪造 + Cookie）
+	if f.cycleTLS != nil {
+		result := f.cycleTLS.FetchWithHeaders(ctx, url, headers)
+		if result.Error == nil && result.HTML != "" {
+			return result
+		}
+		// CycleTLS 失败，回退到标准客户端（带 Headers）
+	}
+
+	// 使用标准 HTTP 客户端（带 Headers）
+	return f.standard.FetchWithHeaders(ctx, url, headers)
+}
+
 // Close 关闭抓取器
 func (f *Fetcher) Close() {
 	if f.cycleTLS != nil {
