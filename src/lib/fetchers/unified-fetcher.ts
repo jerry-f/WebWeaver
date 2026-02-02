@@ -11,6 +11,7 @@
 import { GoScraperClient, type GoScraperResponse, type GoRawResponse } from './clients/go-scraper'
 import { CredentialManager } from '../auth/credential-manager'
 import { fetchFullText, type FullTextResult } from './fulltext'
+import type { FetchStrategy } from './types'
 
 /**
  * 抓取选项
@@ -21,7 +22,7 @@ export interface UnifiedFetchOptions {
   /** Referer */
   referer?: string
   /** 强制使用指定策略 */
-  strategy?: 'go' | 'browserless' | 'local' | 'auto'
+  strategy?: FetchStrategy
   /** 是否跳过凭证 */
   skipCredentials?: boolean
   /** 源 ID（用于关联数据库凭证） */

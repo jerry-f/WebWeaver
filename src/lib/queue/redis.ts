@@ -82,7 +82,8 @@ export async function closeRedisConnection(): Promise<void> {
  */
 export const CHANNELS = {
   SCHEDULER_RELOAD: 'newsflow:scheduler:reload',
-  SCHEDULER_RELOAD_ALL: 'newsflow:scheduler:reload-all'
+  SCHEDULER_RELOAD_ALL: 'newsflow:scheduler:reload-all',
+  CONFIG_RELOAD: 'newsflow:config:reload'
 } as const
 
 /**
@@ -102,4 +103,14 @@ export async function publishReloadAll(): Promise<void> {
   const redis = getRedisConnection()
   await redis.publish(CHANNELS.SCHEDULER_RELOAD_ALL, 'reload')
   console.log('[Redis] 已发布全部任务重载消息')
+}
+
+/**
+ * 发布配置重载消息
+ * 用于通知 Worker 进程重新加载域名限速/熔断配置
+ */
+export async function publishConfigReload(configType: string): Promise<void> {
+  const redis = getRedisConnection()
+  await redis.publish(CHANNELS.CONFIG_RELOAD, configType)
+  console.log(`[Redis] 已发布配置重载消息: ${configType}`)
 }

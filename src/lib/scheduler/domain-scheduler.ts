@@ -64,7 +64,7 @@ const DEFAULT_LIMITS: Record<string, DomainLimitConfig> = {
 /**
  * 熔断配置
  */
-const CIRCUIT_BREAKER = {
+let CIRCUIT_BREAKER = {
   /** 触发熔断的连续失败次数 */
   failThreshold: 5,
   /** 熔断持续时间 (ms) */
@@ -339,6 +339,32 @@ export class DomainScheduler {
   }
 
   /**
+   * 设置熔断配置
+   *
+   * @param config - 熔断配置（秒为单位）
+   */
+  setCircuitBreakerConfig(config: {
+    failThreshold?: number
+    openDuration?: number
+    maxBackoff?: number
+    initialBackoff?: number
+  }): void {
+    if (config.failThreshold !== undefined) {
+      CIRCUIT_BREAKER.failThreshold = config.failThreshold
+    }
+    if (config.openDuration !== undefined) {
+      // 从秒转换为毫秒
+      CIRCUIT_BREAKER.openDuration = config.openDuration * 1000
+    }
+    if (config.maxBackoff !== undefined) {
+      CIRCUIT_BREAKER.maxBackoff = config.maxBackoff * 1000
+    }
+    if (config.initialBackoff !== undefined) {
+      CIRCUIT_BREAKER.initialBackoff = config.initialBackoff * 1000
+    }
+  }
+
+  /**
    * 辅助：延迟
    */
   private sleep(ms: number): Promise<void> {
@@ -360,5 +386,44 @@ export function extractDomainFromUrl(url: string): string {
     return urlObj.hostname.replace(/^www\./, '')
   } catch {
     return ''
+  }
+}
+
+/**
+ * 从数据库加载域名限速配置
+ */
+export async function loadDomainLimitsFromDB(): Promise<number> {
+  // 动态导入 prisma 避免循环依赖
+  const { prisma } = await import('../prisma')
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const limits = await (prisma as any).domainRateLimit.findMany()
+
+  for (const limit of limits) {
+    domainScheduler.setDomainLimit(limit.domain, {
+      maxConcurrent: limit.maxConcurrent,
+      rps: limit.rps
+    })
+  }
+
+  console.log(`[DomainScheduler] 已从数据库加载 ${limits.length} 个域名限速配置`)
+  return limits.length
+}
+
+/**
+ * 从数据库加载熔断配置
+ */
+export async function loadCircuitBreakerFromDB(): Promise<void> {
+  const { prisma } = await import('../prisma')
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const config = await (prisma as any).systemConfig.findUnique({
+    where: { key: 'circuitBreaker' }
+  })
+
+  if (config) {
+    const parsed = JSON.parse(config.value)
+    domainScheduler.setCircuitBreakerConfig(parsed)
+    console.log(`[DomainScheduler] 已从数据库加载熔断配置: failThreshold=${parsed.failThreshold}, openDuration=${parsed.openDuration}s`)
   }
 }

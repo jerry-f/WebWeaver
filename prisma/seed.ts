@@ -116,6 +116,28 @@ const defaultTasks = [
   },
 ];
 
+// 默认域名限速配置
+const defaultDomainLimits = [
+  { domain: "*", maxConcurrent: 10, rps: 10, description: "默认配置" },
+  { domain: "medium.com", maxConcurrent: 2, rps: 1, description: "严格限制" },
+  { domain: "twitter.com", maxConcurrent: 1, rps: 0.5, description: "严格限制" },
+  { domain: "x.com", maxConcurrent: 1, rps: 0.5, description: "严格限制" },
+  { domain: "zhihu.com", maxConcurrent: 3, rps: 2, description: "中等限制" },
+  { domain: "juejin.cn", maxConcurrent: 3, rps: 2, description: "中等限制" },
+  { domain: "segmentfault.com", maxConcurrent: 3, rps: 2, description: "中等限制" },
+  { domain: "mp.weixin.qq.com", maxConcurrent: 5, rps: 5, description: "宽松限制" },
+  { domain: "weixin.qq.com", maxConcurrent: 5, rps: 5, description: "宽松限制" },
+  { domain: "github.com", maxConcurrent: 5, rps: 3, description: "宽松限制" },
+];
+
+// 默认熔断配置
+const defaultCircuitBreaker = {
+  failThreshold: 5,      // 触发熔断的连续失败次数
+  openDuration: 300,     // 熔断持续时间（秒）
+  maxBackoff: 60,        // 最大退避时间（秒）
+  initialBackoff: 1,     // 初始退避时间（秒）
+};
+
 async function seed() {
   console.log("🌱 Seeding database...\n");
 
@@ -161,6 +183,37 @@ async function seed() {
     } catch (error) {
       console.error(`❌ Failed: ${task.name}`, error);
     }
+  }
+
+  // 添加默认域名限速配置
+  console.log("\n🚦 添加域名限速配置...");
+  for (const limit of defaultDomainLimits) {
+    try {
+      await prisma.domainRateLimit.upsert({
+        where: { domain: limit.domain },
+        update: {},
+        create: limit,
+      });
+      console.log(`✅ Added: ${limit.domain}`);
+    } catch (error) {
+      console.error(`❌ Failed: ${limit.domain}`, error);
+    }
+  }
+
+  // 添加默认熔断配置
+  console.log("\n⚡ 添加熔断配置...");
+  try {
+    await prisma.systemConfig.upsert({
+      where: { key: "circuitBreaker" },
+      update: {},
+      create: {
+        key: "circuitBreaker",
+        value: JSON.stringify(defaultCircuitBreaker),
+      },
+    });
+    console.log("✅ Added: circuitBreaker");
+  } catch (error) {
+    console.error("❌ Failed: circuitBreaker", error);
   }
 
   console.log("\n✨ Seeding completed!");

@@ -232,3 +232,22 @@ model SiteCredential {
   @@index([status])
   @@index([expiresAt])
 }
+
+// 域名限速配置
+model DomainRateLimit {
+  id            String   @id @default(cuid())
+  domain        String   @unique // 域名，"*" 表示默认配置
+  maxConcurrent Int      @default(10)
+  rps           Float    @default(10)
+  description   String?  // 备注说明
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// 系统配置（Key-Value 结构）
+model SystemConfig {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String   // JSON 格式存储
+  updatedAt DateTime @updatedAt
+}

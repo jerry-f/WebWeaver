@@ -19,6 +19,7 @@ import {
   PanelLeftClose,
   PanelLeft,
   Key,
+  SlidersHorizontal,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -31,7 +32,7 @@ const navigation = [
   { name: "订阅管理", href: "/subscriptions", icon: BookOpen },
   { name: "信息源", href: "/sources", icon: Rss },
   { name: "统计分析", href: "/analytics", icon: BarChart3 },
-  { name: "设置", href: "/settings", icon: Settings },
+  { name: "个人设置", href: "/settings", icon: Settings },
 ];
 
 const adminNavigation = [
@@ -39,6 +40,7 @@ const adminNavigation = [
   { name: "用户管理", href: "/admin/users", icon: Users },
   { name: "任务管理", href: "/admin/tasks", icon: ListTodo },
   { name: "凭证管理", href: "/admin/credentials", icon: Key },
+  { name: "系统设置", href: "/admin/settings", icon: SlidersHorizontal },
 ];
 
 export default function DashboardLayout({
