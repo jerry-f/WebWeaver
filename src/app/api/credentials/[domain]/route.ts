@@ -45,7 +45,7 @@ export async function GET(request: Request, { params }: RouteParams) {
 }
 
 /**
- * PUT /api/credentials/[domain] - 更新凭证 Cookie 或启用状态
+ * PUT /api/credentials/[domain] - 更新凭证 Cookie、启用状态或测试 URL
  */
 export async function PUT(request: Request, { params }: RouteParams) {
   try {
@@ -57,7 +57,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
     const { domain } = await params
     const decodedDomain = decodeURIComponent(domain)
     const body = await request.json()
-    const { cookie, enabled } = body
+    const { cookie, enabled, testUrl } = body
 
     const manager = new CredentialManager()
 
@@ -73,6 +73,18 @@ export async function PUT(request: Request, { params }: RouteParams) {
       })
     }
 
+    // 更新测试 URL
+    if (typeof testUrl === 'string') {
+      const success = manager.setTestUrl(decodedDomain, testUrl)
+      if (!success) {
+        return NextResponse.json({ error: '凭证不存在' }, { status: 404 })
+      }
+      return NextResponse.json({
+        success: true,
+        message: `已更新 ${decodedDomain} 的测试 URL`
+      })
+    }
+
     // 更新 Cookie
     if (cookie) {
       const success = manager.updateCookie(decodedDomain, cookie)
@@ -85,7 +97,7 @@ export async function PUT(request: Request, { params }: RouteParams) {
       })
     }
 
-    return NextResponse.json({ error: '请提供 cookie 或 enabled 参数' }, { status: 400 })
+    return NextResponse.json({ error: '请提供 cookie、enabled 或 testUrl 参数' }, { status: 400 })
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },

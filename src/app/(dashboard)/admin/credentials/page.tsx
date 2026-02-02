@@ -28,13 +28,14 @@ import {
   ExternalLink,
   Edit,
   Power,
+  Link,
 } from "lucide-react";
 
 interface Credential {
   domain: string;
   enabled: boolean;
   cookieLength: number;
-  hasTestUrl: boolean;
+  testUrl?: string;
   valid?: boolean;
   error?: string;
   lastChecked?: string;
@@ -66,6 +67,12 @@ export default function CredentialsPage() {
   const [updateDomain, setUpdateDomain] = useState("");
   const [updateCookie, setUpdateCookie] = useState("");
   const [updating, setUpdating] = useState(false);
+
+  // 测试 URL 状态
+  const [testUrlDialogOpen, setTestUrlDialogOpen] = useState(false);
+  const [testUrlDomain, setTestUrlDomain] = useState("");
+  const [testUrlValue, setTestUrlValue] = useState("");
+  const [savingTestUrl, setSavingTestUrl] = useState(false);
 
   // 加载凭证列表
   const loadCredentials = async () => {
@@ -185,6 +192,42 @@ export default function CredentialsPage() {
       }
     } catch (error) {
       console.error("切换状态失败:", error);
+    }
+  };
+
+  // 打开测试 URL 对话框
+  const openTestUrlDialog = (domain: string, currentTestUrl?: string) => {
+    setTestUrlDomain(domain);
+    setTestUrlValue(currentTestUrl || "");
+    setTestUrlDialogOpen(true);
+  };
+
+  // 保存测试 URL
+  const handleSaveTestUrl = async () => {
+    if (!testUrlDomain) return;
+
+    setSavingTestUrl(true);
+    try {
+      const res = await fetch(`/api/credentials/${encodeURIComponent(testUrlDomain)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ testUrl: testUrlValue }),
+      });
+
+      if (res.ok) {
+        setTestUrlDialogOpen(false);
+        setTestUrlDomain("");
+        setTestUrlValue("");
+        loadCredentials();
+      } else {
+        const data = await res.json();
+        alert(data.error || "保存失败");
+      }
+    } catch (error) {
+      console.error("保存测试 URL 失败:", error);
+      alert("保存失败");
+    } finally {
+      setSavingTestUrl(false);
     }
   };
 
@@ -466,6 +509,15 @@ export default function CredentialsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
+                        onClick={() => openTestUrlDialog(cred.domain, cred.testUrl)}
+                        className={cred.testUrl ? "text-blue-500 hover:text-blue-600" : "text-gray-400 hover:text-gray-500"}
+                        title={cred.testUrl ? `测试 URL: ${cred.testUrl}` : "设置测试 URL"}
+                      >
+                        <Link className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => window.open(`https://${cred.domain}`, "_blank")}
                         title="打开网站"
                       >
@@ -559,6 +611,46 @@ export default function CredentialsPage() {
             >
               {updating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
               更新
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 测试 URL 对话框 */}
+      <Dialog open={testUrlDialogOpen} onOpenChange={setTestUrlDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>设置测试 URL - {testUrlDomain}</DialogTitle>
+            <DialogDescription>
+              设置用于检测凭证有效性的测试 URL
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">测试 URL</label>
+              <Input
+                placeholder="例如: https://example.com/user/profile"
+                value={testUrlValue}
+                onChange={(e) => setTestUrlValue(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                输入一个需要登录才能访问的页面 URL，用于验证 Cookie 是否有效
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setTestUrlDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              onClick={handleSaveTestUrl}
+              disabled={savingTestUrl}
+            >
+              {savingTestUrl && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              保存
             </Button>
           </DialogFooter>
         </DialogContent>

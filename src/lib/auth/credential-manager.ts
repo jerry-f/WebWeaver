@@ -16,6 +16,7 @@ interface SiteCredentialConfig {
   cookieFile?: string
   cookie?: string  // 直接内联 Cookie（不推荐）
   domains: string[]
+  testUrl?: string  // 用于检测凭证有效性的测试 URL
   note?: string
   expiresAt?: string | null
   lastUpdated?: string
@@ -340,6 +341,7 @@ export class CredentialManager {
     authType: string
     domains: string[]
     cookieLength: number
+    testUrl?: string
     lastUpdated?: string
     note?: string
   }> {
@@ -349,9 +351,37 @@ export class CredentialManager {
       authType: config.authType,
       domains: config.domains,
       cookieLength: this.getCookieForDomain(domain)?.length || 0,
+      testUrl: config.testUrl,
       lastUpdated: config.lastUpdated,
       note: config.note
     }))
+  }
+
+  /**
+   * 获取域名的测试 URL
+   */
+  getTestUrl(domain: string): string | null {
+    const mainDomain = domain.replace(/^www\./, '')
+    const config = this.config.credentials[mainDomain]
+    return config?.testUrl || null
+  }
+
+  /**
+   * 更新域名的测试 URL
+   */
+  setTestUrl(domain: string, testUrl: string): boolean {
+    const mainDomain = domain.replace(/^www\./, '')
+    const config = this.config.credentials[mainDomain]
+
+    if (!config) {
+      return false
+    }
+
+    config.testUrl = testUrl || undefined
+    config.lastUpdated = new Date().toISOString()
+    this.saveConfig()
+
+    return true
   }
 
   /**
