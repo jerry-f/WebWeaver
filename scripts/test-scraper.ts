@@ -148,16 +148,16 @@ const FETCH_TESTS: FetchTest[] = [
     requiresAuth: true,
     expect: { hasTitle: true, minContentLength: 500 }
   },
-  // {
-  //   name: '36kr 快讯',
-  //   url: 'https://36kr.com/newsflashes/3665468896666246',
-  //   expect: { hasTitle: true, minContentLength: 200 }
-  // },
-  // {
-  //   name: '36kr 文章',
-  //   url: 'https://36kr.com/p/3664533928161793',
-  //   expect: { hasTitle: true, minContentLength: 200 }
-  // }
+  {
+    name: '36kr 快讯',
+    url: 'https://36kr.com/newsflashes/3665468896666246',
+    expect: { hasTitle: true, minContentLength: 200 }
+  },
+  {
+    name: '36kr 文章',
+    url: 'https://36kr.com/p/3664533928161793',
+    expect: { hasTitle: true, minContentLength: 200 }
+  }
 ]
 
 async function testFetch(): Promise<boolean> {
@@ -171,10 +171,10 @@ async function testFetch(): Promise<boolean> {
 
     try {
       const start = Date.now()
-      
+
       // 构建请求体
       const requestBody: Record<string, unknown> = { url: test.url }
-      
+
       // 检查是否需要认证，自动添加 Cookie
       if (test.requiresAuth || credentialManager.requiresAuth(test.url)) {
         const cookie = credentialManager.getCookieForUrl(test.url)
@@ -185,7 +185,7 @@ async function testFetch(): Promise<boolean> {
           warn(`   需要认证但未找到 Cookie，可能会失败`)
         }
       }
-      
+
       const res = await fetch('http://localhost:8088/fetch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -443,6 +443,99 @@ ${COLORS.blue}性能统计:${COLORS.reset}
 }
 
 // ============================================================
+// 7. 凭证状态检测
+// ============================================================
+
+async function testCredentials(): Promise<boolean> {
+  section('凭证状态检测')
+
+  info('检查凭证配置...')
+
+  // 获取凭证管理器配置的域名
+  const domains = credentialManager.getAuthenticatedDomains()
+
+  if (domains.length === 0) {
+    warn('未配置任何站点凭证')
+    console.log(`   ${COLORS.gray}配置文件: config/site-credentials.json${COLORS.reset}`)
+    return true
+  }
+
+  success(`发现 ${domains.length} 个配置的域名: ${[...new Set(domains)].join(', ')}`)
+
+  let passed = 0
+  let failed = 0
+
+  // 检测每个域名的凭证
+  const uniqueDomains = [...new Set(domains.map(d => d.replace(/^www\./, '')))]
+
+  for (const domain of uniqueDomains) {
+    const cookie = credentialManager.getCookieForDomain(domain)
+
+    if (cookie) {
+      success(`${domain}: Cookie 已配置 (${cookie.length} 字符)`)
+
+      // 检查关键 Cookie 字段
+      if (domain.includes('zhihu')) {
+        if (cookie.includes('z_c0=')) {
+          console.log(`   ${COLORS.gray}✓ 包含 z_c0 (登录凭证)${COLORS.reset}`)
+        } else {
+          warn(`   缺少 z_c0，可能无法访问需要登录的内容`)
+        }
+      }
+
+      passed++
+    } else {
+      fail(`${domain}: 未找到 Cookie`)
+      failed++
+    }
+  }
+
+  // 测试凭证有效性（可选）
+  info('测试凭证有效性...')
+
+  const testCases = [
+    { domain: 'zhihu.com', url: 'https://zhuanlan.zhihu.com/p/493407868', name: '知乎文章' }
+  ]
+
+  for (const test of testCases) {
+    if (!credentialManager.getCookieForDomain(test.domain)) {
+      console.log(`   ${COLORS.gray}跳过 ${test.name}（无凭证）${COLORS.reset}`)
+      continue
+    }
+
+    const cookie = credentialManager.getCookieForUrl(test.url)
+    if (!cookie) continue
+
+    try {
+      const res = await fetch('http://localhost:8088/fetch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          url: test.url,
+          headers: { Cookie: cookie }
+        }),
+        signal: AbortSignal.timeout(15000)
+      })
+
+      const data = await res.json()
+
+      if (data.title && !data.error) {
+        success(`${test.name}: 凭证有效 ✓`)
+      } else {
+        fail(`${test.name}: 凭证可能已过期 - ${data.error || '无内容'}`)
+        failed++
+      }
+    } catch (e: any) {
+      fail(`${test.name}: 测试异常 - ${e.message}`)
+    }
+  }
+
+  console.log(`\n凭证检测: ${COLORS.green}${passed} 有效${COLORS.reset}, ${COLORS.red}${failed} 无效${COLORS.reset}`)
+
+  return failed === 0
+}
+
+// ============================================================
 // 主函数
 // ============================================================
 
@@ -465,6 +558,12 @@ ${COLORS.blue}╔═════════════════════
       fail('\n服务检查未通过，请先启动所有服务: docker compose up -d\n')
       process.exit(1)
     }
+  }
+
+  // 凭证检测
+  if (runAll || args.includes('--credentials') || args.includes('--creds')) {
+    const passed = await testCredentials()
+    results.push({ name: '凭证状态', passed })
   }
 
   // 抓取测试
