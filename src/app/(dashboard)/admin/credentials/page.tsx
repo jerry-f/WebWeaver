@@ -27,6 +27,7 @@ import {
   Copy,
   ExternalLink,
   Edit,
+  Power,
 } from "lucide-react";
 
 interface Credential {
@@ -157,6 +158,26 @@ export default function CredentialsPage() {
     setUpdateDomain(domain);
     setUpdateCookie("");
     setUpdateDialogOpen(true);
+  };
+
+  // 切换凭证启用状态
+  const toggleEnabled = async (domain: string, currentEnabled: boolean) => {
+    try {
+      const res = await fetch(`/api/credentials/${encodeURIComponent(domain)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: !currentEnabled }),
+      });
+
+      if (res.ok) {
+        loadCredentials();
+      } else {
+        const data = await res.json();
+        alert(data.error || "操作失败");
+      }
+    } catch (error) {
+      console.error("切换状态失败:", error);
+    }
   };
 
   // 更新凭证（如果不存在则自动添加）
@@ -408,6 +429,15 @@ export default function CredentialsPage() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => toggleEnabled(cred.domain, cred.enabled)}
+                        className={cred.enabled ? "text-green-500 hover:text-green-600" : "text-gray-400 hover:text-gray-500"}
+                        title={cred.enabled ? "点击禁用" : "点击启用"}
+                      >
+                        <Power className="w-4 h-4" />
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"

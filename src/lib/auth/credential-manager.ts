@@ -307,6 +307,31 @@ export class CredentialManager {
   }
 
   /**
+   * 设置凭证启用状态
+   *
+   * @param domain - 域名
+   * @param enabled - 是否启用
+   */
+  setEnabled(domain: string, enabled: boolean): boolean {
+    const mainDomain = domain.replace(/^www\./, '')
+    const config = this.config.credentials[mainDomain]
+
+    if (!config) {
+      return false
+    }
+
+    config.enabled = enabled
+    config.lastUpdated = new Date().toISOString()
+    this.saveConfig()
+
+    // 清除缓存
+    this.cookieCache.delete(domain)
+    this.cookieCache.delete(mainDomain)
+
+    return true
+  }
+
+  /**
    * 获取所有凭证配置（用于前端展示）
    */
   getAllCredentials(): Array<{

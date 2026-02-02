@@ -45,7 +45,7 @@ export async function GET(request: Request, { params }: RouteParams) {
 }
 
 /**
- * PUT /api/credentials/[domain] - 更新凭证 Cookie
+ * PUT /api/credentials/[domain] - 更新凭证 Cookie 或启用状态
  */
 export async function PUT(request: Request, { params }: RouteParams) {
   try {
@@ -57,23 +57,35 @@ export async function PUT(request: Request, { params }: RouteParams) {
     const { domain } = await params
     const decodedDomain = decodeURIComponent(domain)
     const body = await request.json()
-    const { cookie } = body
-
-    if (!cookie) {
-      return NextResponse.json({ error: 'Cookie 不能为空' }, { status: 400 })
-    }
+    const { cookie, enabled } = body
 
     const manager = new CredentialManager()
-    const success = manager.updateCookie(decodedDomain, cookie)
-    
-    if (!success) {
-      return NextResponse.json({ error: '凭证不存在' }, { status: 404 })
+
+    // 更新启用状态
+    if (typeof enabled === 'boolean') {
+      const success = manager.setEnabled(decodedDomain, enabled)
+      if (!success) {
+        return NextResponse.json({ error: '凭证不存在' }, { status: 404 })
+      }
+      return NextResponse.json({
+        success: true,
+        message: `已${enabled ? '启用' : '禁用'} ${decodedDomain} 的凭证`
+      })
     }
-    
-    return NextResponse.json({ 
-      success: true,
-      message: `已更新 ${decodedDomain} 的凭证`
-    })
+
+    // 更新 Cookie
+    if (cookie) {
+      const success = manager.updateCookie(decodedDomain, cookie)
+      if (!success) {
+        return NextResponse.json({ error: '凭证不存在' }, { status: 404 })
+      }
+      return NextResponse.json({
+        success: true,
+        message: `已更新 ${decodedDomain} 的凭证`
+      })
+    }
+
+    return NextResponse.json({ error: '请提供 cookie 或 enabled 参数' }, { status: 400 })
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : 'Unknown error' },
