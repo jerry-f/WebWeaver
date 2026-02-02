@@ -3,12 +3,12 @@
  *
  * 整合所有抓取策略，自动处理：
  * - 站点凭证注入（Cookie）
- * - 策略选择（Go Scraper / Browserless / 本地）
+ * - 策略选择（gRPC / Browserless / 本地）
  * - 失败重试和回退
  * - 凭证过期检测
  */
 
-import { GoScraperClient, type GoScraperResponse, type GoRawResponse } from './clients/go-scraper'
+import { GrpcClientAdapter, type IScraperClient } from './clients/scraper-adapter'
 import { CredentialManager } from '../auth/credential-manager'
 import { fetchFullText, type FullTextResult } from './fulltext'
 import type { FetchStrategy } from './types'
@@ -91,12 +91,12 @@ export interface RawFetchResult {
  * 统一抓取服务类
  */
 export class UnifiedFetcher {
-  private goClient: GoScraperClient
+  private scraperClient: IScraperClient
   private credentialManager: CredentialManager
-  private goScraperAvailable: boolean | null = null
+  private scraperAvailable: boolean | null = null
 
   constructor() {
-    this.goClient = new GoScraperClient()
+    this.scraperClient = new GrpcClientAdapter()
     this.credentialManager = new CredentialManager()
   }
 
@@ -124,12 +124,12 @@ export class UnifiedFetcher {
 
     if (strategy === 'local') {
       result = await this.fetchLocal(url, options, authenticated)
-    } else if (strategy === 'go' || (strategy === 'auto' && await this.isGoScraperAvailable())) {
-      result = await this.fetchWithGoScraper(url, headers, options, authenticated)
+    } else if (strategy === 'go' || (strategy === 'auto' && await this.isScraperAvailable())) {
+      result = await this.fetchWithScraper(url, headers, options, authenticated)
 
-      // Go Scraper 失败时回退到本地
+      // 远程抓取失败时回退到本地
       if (!result.success && strategy === 'auto') {
-        console.log(`[UnifiedFetcher] Go Scraper 失败，回退到本地抓取: ${url}`)
+        console.log(`[UnifiedFetcher] 远程抓取失败，回退到本地抓取: ${url}`)
         result = await this.fetchLocal(url, options, authenticated)
       }
     } else {
@@ -149,16 +149,16 @@ export class UnifiedFetcher {
   }
 
   /**
-   * 使用 Go Scraper 抓取
+   * 使用远程抓取服务抓取
    */
-  private async fetchWithGoScraper(
+  private async fetchWithScraper(
     url: string,
     headers: Record<string, string>,
     options: UnifiedFetchOptions,
     authenticated: boolean
   ): Promise<UnifiedFetchResult> {
     try {
-      const response = await this.goClient.fetch({
+      const response = await this.scraperClient.fetch({
         url,
         headers: Object.keys(headers).length > 0 ? headers : undefined,
         referer: options.referer,
@@ -168,10 +168,10 @@ export class UnifiedFetcher {
       if (!response || response.error) {
         return {
           success: false,
-          strategy: 'go',
+          strategy: 'grpc',
           duration: 0,
           authenticated,
-          error: response?.error || 'Go Scraper 返回空结果'
+          error: response?.error || '远程抓取服务返回空结果'
         }
       }
 
@@ -184,18 +184,15 @@ export class UnifiedFetcher {
         excerpt: response.excerpt,
         byline: response.byline,
         siteName: response.siteName,
-        images: response.images?.map(img => ({
-          originalUrl: img.originalUrl,
-          alt: img.alt
-        })),
-        strategy: 'go',
+        images: response.images,
+        strategy: 'grpc',
         duration: response.duration,
         authenticated
       }
     } catch (error) {
       return {
         success: false,
-        strategy: 'go',
+        strategy: 'grpc',
         duration: 0,
         authenticated,
         error: error instanceof Error ? error.message : String(error)
@@ -254,25 +251,25 @@ export class UnifiedFetcher {
   }
 
   /**
-   * 检查 Go Scraper 是否可用
+   * 检查远程抓取服务是否可用
    */
-  private async isGoScraperAvailable(): Promise<boolean> {
+  private async isScraperAvailable(): Promise<boolean> {
     // 缓存检查结果 60 秒
-    if (this.goScraperAvailable !== null) {
-      return this.goScraperAvailable
+    if (this.scraperAvailable !== null) {
+      return this.scraperAvailable
     }
 
     try {
-      this.goScraperAvailable = await this.goClient.isAvailable()
+      this.scraperAvailable = await this.scraperClient.isAvailable()
 
       // 60 秒后重新检查
       setTimeout(() => {
-        this.goScraperAvailable = null
+        this.scraperAvailable = null
       }, 60000)
 
-      return this.goScraperAvailable
+      return this.scraperAvailable
     } catch {
-      this.goScraperAvailable = false
+      this.scraperAvailable = false
       return false
     }
   }
@@ -296,10 +293,10 @@ export class UnifiedFetcher {
       }
     }
 
-    // 优先使用 Go Scraper
-    if (await this.isGoScraperAvailable()) {
+    // 优先使用远程抓取服务
+    if (await this.isScraperAvailable()) {
       try {
-        const response = await this.goClient.fetchRaw({
+        const response = await this.scraperClient.fetchRaw({
           url,
           headers: Object.keys(headers).length > 0 ? headers : undefined,
           referer: options.referer,
@@ -319,10 +316,10 @@ export class UnifiedFetcher {
           }
         }
 
-        // Go Scraper 失败，回退到本地
-        console.log(`[UnifiedFetcher] Go Scraper fetchRaw 失败，回退到本地: ${url}`)
+        // 远程抓取失败，回退到本地
+        console.log(`[UnifiedFetcher] 远程 fetchRaw 失败，回退到本地: ${url}`)
       } catch (error) {
-        console.error('[UnifiedFetcher] Go Scraper fetchRaw error:', error)
+        console.error('[UnifiedFetcher] 远程 fetchRaw error:', error)
       }
     }
 
@@ -378,8 +375,8 @@ export class UnifiedFetcher {
       cookie: options.skipCredentials ? null : this.credentialManager.getCookieForUrl(url)
     }))
 
-    // 使用 Go Scraper 批量抓取
-    if (await this.isGoScraperAvailable()) {
+    // 使用远程抓取服务批量抓取
+    if (await this.isScraperAvailable()) {
       // TODO: 扩展 Go Scraper 批量接口支持 per-URL headers
       // 目前先逐个抓取
       for (const { url, cookie } of urlsWithCookies) {

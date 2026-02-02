@@ -78,6 +78,20 @@ export interface GrpcHealthResponse {
   cycletlsEnabled: boolean
 }
 
+/**
+ * 原始抓取响应（不经过 Readability 处理）
+ */
+export interface GrpcRawResponse {
+  url: string
+  finalUrl: string
+  body: string
+  contentType: string
+  statusCode: number
+  strategy: string
+  durationMs: number
+  error: string
+}
+
 // Proto 文件路径
 const PROTO_PATH = path.join(
   process.cwd(),
@@ -203,6 +217,64 @@ export class GoScraperGrpcClient {
   }
 
   /**
+   * 检查服务是否可用（对齐 HTTP 客户端 API）
+   */
+  async isAvailable(): Promise<boolean> {
+    try {
+      if (!this.connected) {
+        return false
+      }
+      const health = await this.healthCheck()
+      return health.status === 'ok'
+    } catch {
+      return false
+    }
+  }
+
+  /**
+   * 原始抓取（不经过 Readability 处理）
+   */
+  async fetchRaw(
+    url: string,
+    options?: GrpcFetchOptions
+  ): Promise<GrpcRawResponse> {
+    if (!this.connected) {
+      throw new Error('gRPC client not connected')
+    }
+
+    return new Promise((resolve, reject) => {
+      const request = {
+        url,
+        options: options
+          ? {
+              timeout_ms: options.timeoutMs || 15000,
+              extract_fulltext: false,
+              process_images: false,
+              headers: options.headers || {},
+              strategy: options.strategy || 'auto',
+              referer: options.referer || ''
+            }
+          : undefined
+      }
+
+      const deadline = new Date()
+      deadline.setSeconds(deadline.getSeconds() + 30)
+
+      this.client.FetchRaw(
+        request,
+        { deadline },
+        (err: Error | null, response: any) => {
+          if (err) {
+            reject(err)
+          } else {
+            resolve(this.transformRawResponse(response))
+          }
+        }
+      )
+    })
+  }
+
+  /**
    * 关闭客户端
    */
   close(): void {
@@ -232,6 +304,22 @@ export class GoScraperGrpcClient {
         isLazy: img.is_lazy || false
       })),
       readingTime: response.reading_time || 0,
+      strategy: response.strategy || '',
+      durationMs: parseInt(response.duration_ms || '0', 10),
+      error: response.error || ''
+    }
+  }
+
+  /**
+   * 转换原始抓取响应格式
+   */
+  private transformRawResponse(response: any): GrpcRawResponse {
+    return {
+      url: response.url || '',
+      finalUrl: response.final_url || '',
+      body: response.body || '',
+      contentType: response.content_type || '',
+      statusCode: response.status_code || 0,
       strategy: response.strategy || '',
       durationMs: parseInt(response.duration_ms || '0', 10),
       error: response.error || ''

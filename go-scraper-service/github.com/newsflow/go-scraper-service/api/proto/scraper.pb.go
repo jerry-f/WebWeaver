@@ -2,7 +2,7 @@
 // versions:
 // 	protoc-gen-go v1.36.11
 // 	protoc        v3.12.4
-// source: scraper.proto
+// source: api/proto/scraper.proto
 
 package proto
 
@@ -29,7 +29,7 @@ type Empty struct {
 
 func (x *Empty) Reset() {
 	*x = Empty{}
-	mi := &file_scraper_proto_msgTypes[0]
+	mi := &file_api_proto_scraper_proto_msgTypes[0]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -41,7 +41,7 @@ func (x *Empty) String() string {
 func (*Empty) ProtoMessage() {}
 
 func (x *Empty) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[0]
+	mi := &file_api_proto_scraper_proto_msgTypes[0]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -54,7 +54,7 @@ func (x *Empty) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Empty.ProtoReflect.Descriptor instead.
 func (*Empty) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{0}
+	return file_api_proto_scraper_proto_rawDescGZIP(), []int{0}
 }
 
 type FetchRequest struct {
@@ -67,7 +67,7 @@ type FetchRequest struct {
 
 func (x *FetchRequest) Reset() {
 	*x = FetchRequest{}
-	mi := &file_scraper_proto_msgTypes[1]
+	mi := &file_api_proto_scraper_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -79,7 +79,7 @@ func (x *FetchRequest) String() string {
 func (*FetchRequest) ProtoMessage() {}
 
 func (x *FetchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[1]
+	mi := &file_api_proto_scraper_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -92,7 +92,7 @@ func (x *FetchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchRequest.ProtoReflect.Descriptor instead.
 func (*FetchRequest) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{1}
+	return file_api_proto_scraper_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *FetchRequest) GetUrl() string {
@@ -124,7 +124,7 @@ type FetchOptions struct {
 
 func (x *FetchOptions) Reset() {
 	*x = FetchOptions{}
-	mi := &file_scraper_proto_msgTypes[2]
+	mi := &file_api_proto_scraper_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -136,7 +136,7 @@ func (x *FetchOptions) String() string {
 func (*FetchOptions) ProtoMessage() {}
 
 func (x *FetchOptions) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[2]
+	mi := &file_api_proto_scraper_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -149,7 +149,7 @@ func (x *FetchOptions) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchOptions.ProtoReflect.Descriptor instead.
 func (*FetchOptions) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{2}
+	return file_api_proto_scraper_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *FetchOptions) GetTimeoutMs() int32 {
@@ -222,7 +222,7 @@ type FetchResponse struct {
 
 func (x *FetchResponse) Reset() {
 	*x = FetchResponse{}
-	mi := &file_scraper_proto_msgTypes[3]
+	mi := &file_api_proto_scraper_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -234,7 +234,7 @@ func (x *FetchResponse) String() string {
 func (*FetchResponse) ProtoMessage() {}
 
 func (x *FetchResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[3]
+	mi := &file_api_proto_scraper_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -247,7 +247,7 @@ func (x *FetchResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchResponse.ProtoReflect.Descriptor instead.
 func (*FetchResponse) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{3}
+	return file_api_proto_scraper_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *FetchResponse) GetUrl() string {
@@ -353,7 +353,7 @@ type Image struct {
 
 func (x *Image) Reset() {
 	*x = Image{}
-	mi := &file_scraper_proto_msgTypes[4]
+	mi := &file_api_proto_scraper_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -365,7 +365,7 @@ func (x *Image) String() string {
 func (*Image) ProtoMessage() {}
 
 func (x *Image) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[4]
+	mi := &file_api_proto_scraper_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -378,7 +378,7 @@ func (x *Image) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Image.ProtoReflect.Descriptor instead.
 func (*Image) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{4}
+	return file_api_proto_scraper_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *Image) GetOriginalUrl() string {
@@ -421,7 +421,7 @@ type HealthResponse struct {
 
 func (x *HealthResponse) Reset() {
 	*x = HealthResponse{}
-	mi := &file_scraper_proto_msgTypes[5]
+	mi := &file_api_proto_scraper_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -433,7 +433,7 @@ func (x *HealthResponse) String() string {
 func (*HealthResponse) ProtoMessage() {}
 
 func (x *HealthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[5]
+	mi := &file_api_proto_scraper_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -446,7 +446,7 @@ func (x *HealthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HealthResponse.ProtoReflect.Descriptor instead.
 func (*HealthResponse) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{5}
+	return file_api_proto_scraper_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *HealthResponse) GetStatus() string {
@@ -494,7 +494,7 @@ type FetchRawResponse struct {
 
 func (x *FetchRawResponse) Reset() {
 	*x = FetchRawResponse{}
-	mi := &file_scraper_proto_msgTypes[6]
+	mi := &file_api_proto_scraper_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -506,7 +506,7 @@ func (x *FetchRawResponse) String() string {
 func (*FetchRawResponse) ProtoMessage() {}
 
 func (x *FetchRawResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_scraper_proto_msgTypes[6]
+	mi := &file_api_proto_scraper_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -519,7 +519,7 @@ func (x *FetchRawResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FetchRawResponse.ProtoReflect.Descriptor instead.
 func (*FetchRawResponse) Descriptor() ([]byte, []int) {
-	return file_scraper_proto_rawDescGZIP(), []int{6}
+	return file_api_proto_scraper_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *FetchRawResponse) GetUrl() string {
@@ -578,11 +578,11 @@ func (x *FetchRawResponse) GetError() string {
 	return ""
 }
 
-var File_scraper_proto protoreflect.FileDescriptor
+var File_api_proto_scraper_proto protoreflect.FileDescriptor
 
-const file_scraper_proto_rawDesc = "" +
+const file_api_proto_scraper_proto_rawDesc = "" +
 	"\n" +
-	"\rscraper.proto\x12\ascraper\"\a\n" +
+	"\x17api/proto/scraper.proto\x12\ascraper\"\a\n" +
 	"\x05Empty\"Q\n" +
 	"\fFetchRequest\x12\x10\n" +
 	"\x03url\x18\x01 \x01(\tR\x03url\x12/\n" +
@@ -643,19 +643,19 @@ const file_scraper_proto_rawDesc = "" +
 	"\vHealthCheck\x12\x0e.scraper.Empty\x1a\x17.scraper.HealthResponseB2Z0github.com/newsflow/go-scraper-service/api/protob\x06proto3"
 
 var (
-	file_scraper_proto_rawDescOnce sync.Once
-	file_scraper_proto_rawDescData []byte
+	file_api_proto_scraper_proto_rawDescOnce sync.Once
+	file_api_proto_scraper_proto_rawDescData []byte
 )
 
-func file_scraper_proto_rawDescGZIP() []byte {
-	file_scraper_proto_rawDescOnce.Do(func() {
-		file_scraper_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_scraper_proto_rawDesc), len(file_scraper_proto_rawDesc)))
+func file_api_proto_scraper_proto_rawDescGZIP() []byte {
+	file_api_proto_scraper_proto_rawDescOnce.Do(func() {
+		file_api_proto_scraper_proto_rawDescData = protoimpl.X.CompressGZIP(unsafe.Slice(unsafe.StringData(file_api_proto_scraper_proto_rawDesc), len(file_api_proto_scraper_proto_rawDesc)))
 	})
-	return file_scraper_proto_rawDescData
+	return file_api_proto_scraper_proto_rawDescData
 }
 
-var file_scraper_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
-var file_scraper_proto_goTypes = []any{
+var file_api_proto_scraper_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_api_proto_scraper_proto_goTypes = []any{
 	(*Empty)(nil),            // 0: scraper.Empty
 	(*FetchRequest)(nil),     // 1: scraper.FetchRequest
 	(*FetchOptions)(nil),     // 2: scraper.FetchOptions
@@ -665,7 +665,7 @@ var file_scraper_proto_goTypes = []any{
 	(*FetchRawResponse)(nil), // 6: scraper.FetchRawResponse
 	nil,                      // 7: scraper.FetchOptions.HeadersEntry
 }
-var file_scraper_proto_depIdxs = []int32{
+var file_api_proto_scraper_proto_depIdxs = []int32{
 	2, // 0: scraper.FetchRequest.options:type_name -> scraper.FetchOptions
 	7, // 1: scraper.FetchOptions.headers:type_name -> scraper.FetchOptions.HeadersEntry
 	4, // 2: scraper.FetchResponse.images:type_name -> scraper.Image
@@ -684,26 +684,26 @@ var file_scraper_proto_depIdxs = []int32{
 	0, // [0:3] is the sub-list for field type_name
 }
 
-func init() { file_scraper_proto_init() }
-func file_scraper_proto_init() {
-	if File_scraper_proto != nil {
+func init() { file_api_proto_scraper_proto_init() }
+func file_api_proto_scraper_proto_init() {
+	if File_api_proto_scraper_proto != nil {
 		return
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
-			RawDescriptor: unsafe.Slice(unsafe.StringData(file_scraper_proto_rawDesc), len(file_scraper_proto_rawDesc)),
+			RawDescriptor: unsafe.Slice(unsafe.StringData(file_api_proto_scraper_proto_rawDesc), len(file_api_proto_scraper_proto_rawDesc)),
 			NumEnums:      0,
 			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
-		GoTypes:           file_scraper_proto_goTypes,
-		DependencyIndexes: file_scraper_proto_depIdxs,
-		MessageInfos:      file_scraper_proto_msgTypes,
+		GoTypes:           file_api_proto_scraper_proto_goTypes,
+		DependencyIndexes: file_api_proto_scraper_proto_depIdxs,
+		MessageInfos:      file_api_proto_scraper_proto_msgTypes,
 	}.Build()
-	File_scraper_proto = out.File
-	file_scraper_proto_goTypes = nil
-	file_scraper_proto_depIdxs = nil
+	File_api_proto_scraper_proto = out.File
+	file_api_proto_scraper_proto_goTypes = nil
+	file_api_proto_scraper_proto_depIdxs = nil
 }

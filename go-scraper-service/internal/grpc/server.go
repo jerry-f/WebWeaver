@@ -95,6 +95,71 @@ func (s *ScraperServer) HealthCheck(ctx context.Context, req *pb.Empty) (*pb.Hea
 	}, nil
 }
 
+// FetchRaw 原始抓取（不经过 Readability 处理）
+func (s *ScraperServer) FetchRaw(ctx context.Context, req *pb.FetchRequest) (*pb.FetchRawResponse, error) {
+	// 获取信号量
+	select {
+	case s.semaphore <- struct{}{}:
+		defer func() { <-s.semaphore }()
+	case <-ctx.Done():
+		return &pb.FetchRawResponse{
+			Url:   req.Url,
+			Error: "context cancelled",
+		}, nil
+	default:
+		return &pb.FetchRawResponse{
+			Url:   req.Url,
+			Error: "server is busy",
+		}, nil
+	}
+
+	return s.fetchRawContent(ctx, req), nil
+}
+
+// fetchRawContent 抓取原始内容（不提取正文）
+func (s *ScraperServer) fetchRawContent(ctx context.Context, req *pb.FetchRequest) *pb.FetchRawResponse {
+	start := time.Now()
+	resp := &pb.FetchRawResponse{Url: req.Url}
+
+	// 设置超时
+	timeout := s.config.RequestTimeout
+	if req.Options != nil && req.Options.TimeoutMs > 0 {
+		timeout = time.Duration(req.Options.TimeoutMs) * time.Millisecond
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// 根据策略抓取
+	var fetchResult *fetcher.FetchResult
+	strategy := ""
+	if req.Options != nil {
+		strategy = req.Options.Strategy
+	}
+
+	if strategy != "" {
+		fetchResult = s.fetcher.FetchWithStrategy(ctx, req.Url, strategy)
+	} else if req.Options != nil && req.Options.Referer != "" {
+		fetchResult = s.fetcher.FetchWithReferer(ctx, req.Url, req.Options.Referer)
+	} else {
+		fetchResult = s.fetcher.Fetch(ctx, req.Url)
+	}
+
+	resp.Strategy = fetchResult.Strategy
+	resp.DurationMs = time.Since(start).Milliseconds()
+
+	if fetchResult.Error != nil {
+		resp.Error = fetchResult.Error.Error()
+		return resp
+	}
+
+	resp.FinalUrl = fetchResult.FinalURL
+	resp.Body = fetchResult.HTML
+	resp.ContentType = fetchResult.ContentType
+	resp.StatusCode = int32(fetchResult.StatusCode)
+
+	return resp
+}
+
 // fetchAndExtract 抓取并提取内容
 func (s *ScraperServer) fetchAndExtract(ctx context.Context, req *pb.FetchRequest) *pb.FetchResponse {
 	start := time.Now()

@@ -12,6 +12,9 @@ service ScraperService {
   // 批量抓取
   rpc FetchArticles(stream FetchRequest) returns (stream FetchResponse);
 
+  // 原始抓取（不经过 Readability 处理）
+  rpc FetchRaw(FetchRequest) returns (FetchRawResponse);
+
   // 健康检查
   rpc HealthCheck(Empty) returns (HealthResponse);
 }
@@ -61,4 +64,16 @@ message HealthResponse {
   int32 max_concurrent = 2;
   int32 available = 3;
   bool cycletls_enabled = 4;
+}
+
+// 原始抓取响应（不经过 Readability 处理）
+message FetchRawResponse {
+  string url = 1;
+  string final_url = 2;
+  string body = 3;
+  string content_type = 4;
+  int32 status_code = 5;
+  string strategy = 6;
+  int64 duration_ms = 7;
+  string error = 8;
 }

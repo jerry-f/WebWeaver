@@ -174,9 +174,6 @@ services:
       timeout: 10s
       retries: 3
 
-volumes:
-  redis-data:
-
   # ========================================
   # NewsFlow 应用服务 （生产部署：取消注释，实现完全容器化）
   # ========================================
@@ -234,7 +231,6 @@ volumes:
     build:
       context: .
       target: worker # ← 只构建到 "worker" 阶段
-
     container_name: newsflow-worker
     environment:
       - DATABASE_URL=file:/app/data/newsflow.db
@@ -264,4 +260,5 @@ volumes:
         max-file: "3"
 
 volumes:
+  redis-data:
   app-data:
