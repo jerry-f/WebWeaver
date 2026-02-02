@@ -6,10 +6,11 @@
 
 import { Worker, Job } from 'bullmq'
 import { getRedisConnection } from './redis'
-import { QUEUE_NAMES, type FetchJobData, type SummaryJobData } from './queues'
+import { QUEUE_NAMES, type FetchJobData, type SummaryJobData, type CredentialJobData } from './queues'
 import { fetchWithPipeline } from '../fetchers/clients/pipeline'
 import { fetchWithGoScraper, checkGoScraperHealth } from '../fetchers/clients/go-scraper'
 import { prisma } from '../prisma'
+import { refreshExpiredCredentials, refreshCredential } from '../tasks/refresh-credentials'
 
 /**
  * Worker 配置
@@ -125,6 +126,79 @@ async function processSummaryJob(job: Job<SummaryJobData>): Promise<void> {
  */
 let fetchWorker: Worker<FetchJobData> | null = null
 let summaryWorker: Worker<SummaryJobData> | null = null
+let credentialWorker: Worker<CredentialJobData> | null = null
+
+/**
+ * 凭证刷新任务处理函数
+ */
+async function processCredentialJob(job: Job<CredentialJobData>): Promise<void> {
+  const { taskId, manual, credentialId } = job.data
+
+  console.log(`[CredentialWorker] Processing job ${job.id}${manual ? ' (manual)' : ''}`)
+
+  try {
+    let result
+
+    if (credentialId) {
+      // 刷新单个凭证
+      const singleResult = await refreshCredential(credentialId)
+      result = {
+        success: singleResult.success ? 1 : 0,
+        failed: singleResult.success ? 0 : 1,
+        skipped: 0
+      }
+      console.log(`[CredentialWorker] Single credential refresh: ${singleResult.message}`)
+    } else {
+      // 刷新所有过期凭证
+      result = await refreshExpiredCredentials()
+      console.log(`[CredentialWorker] Batch refresh complete: success=${result.success}, failed=${result.failed}, skipped=${result.skipped}`)
+    }
+
+    // 如果有关联的任务，更新任务状态
+    if (taskId) {
+      await prisma.task.update({
+        where: { id: taskId },
+        data: {
+          lastStatus: result.failed === 0 ? 'success' : 'partial',
+          lastError: result.failed > 0 ? `${result.failed} 个凭证刷新失败` : null
+        }
+      })
+
+      // 记录任务日志
+      await prisma.taskLog.create({
+        data: {
+          taskId,
+          status: result.failed === 0 ? 'success' : 'partial',
+          message: `刷新完成: 成功=${result.success}, 失败=${result.failed}, 跳过=${result.skipped}`,
+          duration: Date.now() - job.timestamp
+        }
+      })
+    }
+  } catch (error) {
+    console.error(`[CredentialWorker] Failed job ${job.id}:`, error)
+
+    if (taskId) {
+      await prisma.task.update({
+        where: { id: taskId },
+        data: {
+          lastStatus: 'failed',
+          lastError: error instanceof Error ? error.message : 'Unknown error'
+        }
+      })
+
+      await prisma.taskLog.create({
+        data: {
+          taskId,
+          status: 'failed',
+          message: error instanceof Error ? error.message : 'Unknown error',
+          duration: Date.now() - job.timestamp
+        }
+      })
+    }
+
+    throw error
+  }
+}
 
 /**
  * 启动抓取 Worker
@@ -195,11 +269,46 @@ export function startSummaryWorker(config: WorkerConfig = {}): Worker<SummaryJob
 }
 
 /**
+ * 启动凭证刷新 Worker
+ */
+export function startCredentialWorker(config: WorkerConfig = {}): Worker<CredentialJobData> {
+  if (credentialWorker) {
+    return credentialWorker
+  }
+
+  credentialWorker = new Worker<CredentialJobData>(
+    QUEUE_NAMES.CREDENTIAL,
+    processCredentialJob,
+    {
+      connection: getRedisConnection(),
+      concurrency: 1 // 凭证刷新只需要单并发
+    }
+  )
+
+  credentialWorker.on('completed', (job) => {
+    console.log(`[CredentialWorker] Job ${job.id} completed`)
+  })
+
+  credentialWorker.on('failed', (job, error) => {
+    console.error(`[CredentialWorker] Job ${job?.id} failed:`, error.message)
+  })
+
+  credentialWorker.on('error', (error) => {
+    console.error('[CredentialWorker] Error:', error)
+  })
+
+  console.log('[CredentialWorker] Started')
+
+  return credentialWorker
+}
+
+/**
  * 启动所有 Worker
  */
 export function startAllWorkers(config: WorkerConfig = {}): void {
   startFetchWorker(config)
   startSummaryWorker(config)
+  startCredentialWorker(config)
 }
 
 /**
@@ -213,6 +322,10 @@ export async function stopAllWorkers(): Promise<void> {
   if (summaryWorker) {
     await summaryWorker.close()
     summaryWorker = null
+  }
+  if (credentialWorker) {
+    await credentialWorker.close()
+    credentialWorker = null
   }
   console.log('[Workers] All workers stopped')
 }

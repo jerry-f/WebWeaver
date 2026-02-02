@@ -94,10 +94,33 @@ const defaultSources = [
   },
 ];
 
+// 默认定时任务
+const defaultTasks = [
+  {
+    name: "凭证自动刷新",
+    type: "REFRESH_CREDENTIALS",
+    schedule: "0 3 * * *", // 每天凌晨 3 点
+    enabled: true,
+  },
+  {
+    name: "RSS 源抓取",
+    type: "FETCH",
+    schedule: "0 */2 * * *", // 每 2 小时
+    enabled: true,
+  },
+  {
+    name: "过期数据清理",
+    type: "CLEANUP",
+    schedule: "0 4 * * 0", // 每周日凌晨 4 点
+    enabled: true,
+  },
+];
+
 async function seed() {
   console.log("🌱 Seeding database...\n");
 
   // 添加默认信息源
+  console.log("📰 添加信息源...");
   for (const source of defaultSources) {
     try {
       const existing = await prisma.source.findFirst({
@@ -115,6 +138,28 @@ async function seed() {
       console.log(`✅ Added: ${source.name}`);
     } catch (error) {
       console.error(`❌ Failed: ${source.name}`, error);
+    }
+  }
+
+  // 添加默认定时任务
+  console.log("\n⏰ 添加定时任务...");
+  for (const task of defaultTasks) {
+    try {
+      const existing = await prisma.task.findFirst({
+        where: { type: task.type },
+      });
+
+      if (existing) {
+        console.log(`⏭️  Skip: ${task.name} (already exists)`);
+        continue;
+      }
+
+      await prisma.task.create({
+        data: task,
+      });
+      console.log(`✅ Added: ${task.name}`);
+    } catch (error) {
+      console.error(`❌ Failed: ${task.name}`, error);
     }
   }
 

@@ -38,12 +38,25 @@ export interface SummaryJobData {
 }
 
 /**
+ * 凭证刷新任务数据
+ */
+export interface CredentialJobData {
+  /** 任务 ID（来自 Task 表） */
+  taskId?: string
+  /** 是否手动触发 */
+  manual?: boolean
+  /** 指定凭证 ID（可选，不指定则刷新所有过期凭证） */
+  credentialId?: string
+}
+
+/**
  * 队列名称
  */
 export const QUEUE_NAMES = {
   FETCH: 'newsflow:fetch',
   SUMMARY: 'newsflow:summary',
-  IMAGE: 'newsflow:image'
+  IMAGE: 'newsflow:image',
+  CREDENTIAL: 'newsflow:credential'
 } as const
 
 /**
@@ -76,6 +89,11 @@ let fetchQueue: Queue<FetchJobData> | null = null
 let summaryQueue: Queue<SummaryJobData> | null = null
 
 /**
+ * 凭证刷新任务队列
+ */
+let credentialQueue: Queue<CredentialJobData> | null = null
+
+/**
  * 获取抓取任务队列
  */
 export function getFetchQueue(): Queue<FetchJobData> {
@@ -99,6 +117,33 @@ export function getSummaryQueue(): Queue<SummaryJobData> {
     })
   }
   return summaryQueue
+}
+
+/**
+ * 获取凭证刷新队列
+ */
+export function getCredentialQueue(): Queue<CredentialJobData> {
+  if (!credentialQueue) {
+    credentialQueue = new Queue<CredentialJobData>(QUEUE_NAMES.CREDENTIAL, {
+      connection: getRedisConnection(),
+      defaultJobOptions: {
+        attempts: 2,
+        backoff: {
+          type: 'exponential' as const,
+          delay: 60000 // 1 分钟
+        },
+        removeOnComplete: {
+          count: 50,
+          age: 24 * 3600
+        },
+        removeOnFail: {
+          count: 100,
+          age: 7 * 24 * 3600
+        }
+      }
+    })
+  }
+  return credentialQueue
 }
 
 /**
@@ -153,15 +198,18 @@ export async function addSummaryJob(data: SummaryJobData): Promise<Job<SummaryJo
 export async function getQueueStats() {
   const fetchQ = getFetchQueue()
   const summaryQ = getSummaryQueue()
+  const credentialQ = getCredentialQueue()
 
-  const [fetchCounts, summaryCounts] = await Promise.all([
+  const [fetchCounts, summaryCounts, credentialCounts] = await Promise.all([
     fetchQ.getJobCounts(),
-    summaryQ.getJobCounts()
+    summaryQ.getJobCounts(),
+    credentialQ.getJobCounts()
   ])
 
   return {
     fetch: fetchCounts,
-    summary: summaryCounts
+    summary: summaryCounts,
+    credential: credentialCounts
   }
 }
 
@@ -171,10 +219,12 @@ export async function getQueueStats() {
 export async function cleanQueues(): Promise<void> {
   const fetchQ = getFetchQueue()
   const summaryQ = getSummaryQueue()
+  const credentialQ = getCredentialQueue()
 
   await Promise.all([
     fetchQ.obliterate({ force: true }),
-    summaryQ.obliterate({ force: true })
+    summaryQ.obliterate({ force: true }),
+    credentialQ.obliterate({ force: true })
   ])
 }
 
@@ -189,5 +239,9 @@ export async function closeQueues(): Promise<void> {
   if (summaryQueue) {
     await summaryQueue.close()
     summaryQueue = null
+  }
+  if (credentialQueue) {
+    await credentialQueue.close()
+    credentialQueue = null
   }
 }

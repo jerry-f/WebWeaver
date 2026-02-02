@@ -17,6 +17,7 @@ export {
   QUEUE_NAMES,
   getFetchQueue,
   getSummaryQueue,
+  getCredentialQueue,
   addFetchJob,
   addFetchJobs,
   addSummaryJob,
@@ -24,13 +25,15 @@ export {
   cleanQueues,
   closeQueues,
   type FetchJobData,
-  type SummaryJobData
+  type SummaryJobData,
+  type CredentialJobData
 } from './queues'
 
 // Workers
 export {
   startFetchWorker,
   startSummaryWorker,
+  startCredentialWorker,
   startAllWorkers,
   stopAllWorkers,
   type WorkerConfig
