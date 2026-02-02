@@ -147,6 +147,75 @@ export interface ScrapeConfig {
 }
 
 /**
+ * 全站爬取配置（SiteCrawl 类型专用）
+ *
+ * 用于配置从种子 URL 开始递归爬取整个网站的行为
+ *
+ * @example
+ * {
+ *   maxDepth: 3,
+ *   maxUrls: 1000,
+ *   includePatterns: ['/docs/', '/guide/'],
+ *   excludePatterns: ['/api/', '/login'],
+ *   sameDomainOnly: true
+ * }
+ */
+export interface SiteCrawlConfig {
+  /**
+   * 最大爬取深度
+   * 0 = 只抓取种子 URL
+   * 1 = 种子 URL + 直接链接
+   * 默认: 3
+   */
+  maxDepth?: number
+
+  /**
+   * 最大发现 URL 数量
+   * 防止无限爬取，默认: 1000
+   */
+  maxUrls?: number
+
+  /**
+   * URL 包含规则（正则表达式数组）
+   * 只爬取匹配的 URL
+   * 例如: ["/docs/", "/guide/"]
+   */
+  includePatterns?: string[]
+
+  /**
+   * URL 排除规则（正则表达式数组）
+   * 跳过匹配的 URL
+   * 例如: ["/api/", "/login", "\\?page="]
+   */
+  excludePatterns?: string[]
+
+  /**
+   * 是否限制同域名
+   * 默认: true（只爬取与种子 URL 相同域名的页面）
+   */
+  sameDomainOnly?: boolean
+
+  /**
+   * 允许的子域名（当 sameDomainOnly=true 时）
+   * 例如: ["docs", "blog"] 表示允许 docs.example.com, blog.example.com
+   */
+  allowedSubdomains?: string[]
+
+  /**
+   * 链接提取选择器（可选）
+   * 默认提取所有 <a href="...">
+   * 可以限制为特定区域，如 "main a" 或 ".content a"
+   */
+  linkSelector?: string
+
+  /**
+   * 内容区域选择器（可选）
+   * 用于只提取特定区域的链接，过滤导航栏等
+   */
+  contentSelector?: string
+}
+
+/**
  * 信息源配置
  *
  * 存储在 Source.config JSON 字段中的扩展配置
@@ -158,6 +227,12 @@ export interface SourceConfig {
    * 包含用于网页抓取的 CSS 选择器
    */
   scrape?: ScrapeConfig
+
+  /**
+   * 全站爬取配置
+   * SiteCrawl 类型专用
+   */
+  siteCrawl?: SiteCrawlConfig
 
   /**
    * 抓取配置

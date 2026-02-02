@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, Check, AlertCircle } from "lucide-react";
+import { RefreshCw, Check, AlertCircle, Loader2 } from "lucide-react";
+import { useFetchSource } from "@/hooks/use-job-status";
 
 interface SourceFetchButtonProps {
   sourceId: string;
@@ -10,36 +11,41 @@ interface SourceFetchButtonProps {
 }
 
 export default function SourceFetchButton({ sourceId, sourceName }: SourceFetchButtonProps) {
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
+  const { fetch, isLoading, isCompleted, isFailed, status, error, reset } = useFetchSource();
 
-  const handleFetch = async () => {
-    setLoading(true);
-    setResult(null);
-
-    try {
-      const res = await fetch(`/api/sources/${sourceId}/fetch`, {
-        method: "POST",
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setResult({ success: false, message: data.error || "抓取失败" });
-      } else {
-        const added = data.added || 0;
-        setResult({
-          success: true,
-          message: added > 0 ? `新增 ${added} 篇` : "无新文章",
-        });
-      }
-    } catch {
-      setResult({ success: false, message: "网络错误" });
-    } finally {
-      setLoading(false);
-      // 3秒后清除结果提示
-      setTimeout(() => setResult(null), 3000);
+  // 3秒后清除结果提示
+  useEffect(() => {
+    if (isCompleted || isFailed) {
+      const timer = setTimeout(() => reset(), 3000);
+      return () => clearTimeout(timer);
     }
+  }, [isCompleted, isFailed, reset]);
+
+  const handleFetch = () => {
+    fetch(sourceId);
   };
+
+  // 构建结果消息
+  const getMessage = () => {
+    if (isFailed) {
+      return error || "抓取失败";
+    }
+    if (isCompleted && status?.progress) {
+      const added = status.progress.added || 0;
+      const queued = status.progress.queued || 0;
+      if (added > 0) {
+        return queued > 0 ? `新增 ${added} 篇，${queued} 篇待抓取` : `新增 ${added} 篇`;
+      }
+      return "无新文章";
+    }
+    if (isLoading && status?.status === "progress" && status.progress) {
+      return `进度: ${status.progress.current}/${status.progress.total}`;
+    }
+    return null;
+  };
+
+  const message = getMessage();
+  const showResult = isCompleted || isFailed;
 
   return (
     <div className="flex items-center gap-2">
@@ -47,24 +53,30 @@ export default function SourceFetchButton({ sourceId, sourceName }: SourceFetchB
         variant="ghost"
         size="sm"
         onClick={handleFetch}
-        disabled={loading}
+        disabled={isLoading}
         title={`抓取 ${sourceName}`}
         className="h-8 px-2"
       >
-        <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+        {isLoading ? (
+          <Loader2 className="w-4 h-4 animate-spin" />
+        ) : (
+          <RefreshCw className="w-4 h-4" />
+        )}
       </Button>
-      {result && (
+      {message && (
         <span
           className={`text-xs flex items-center gap-1 ${
-            result.success ? "text-green-600" : "text-red-500"
+            isFailed ? "text-red-500" : isCompleted ? "text-green-600" : "text-muted-foreground"
           }`}
         >
-          {result.success ? (
-            <Check className="w-3 h-3" />
-          ) : (
-            <AlertCircle className="w-3 h-3" />
+          {showResult && (
+            isFailed ? (
+              <AlertCircle className="w-3 h-3" />
+            ) : (
+              <Check className="w-3 h-3" />
+            )
           )}
-          {result.message}
+          {message}
         </span>
       )}
     </div>

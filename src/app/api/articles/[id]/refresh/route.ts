@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { fetchFullText } from '@/lib/fetchers/fulltext'
 import { fetchRSS } from '@/lib/fetchers/rss'
 import { generateSummary } from '@/lib/ai/summarizer'
 import { isAIEnabled } from '@/lib/ai'
+import { getScraperClient } from '@/lib/fetchers/clients/scraper-adapter'
 
 /**
  * 刷新单篇文章内容
@@ -64,11 +64,26 @@ export async function POST(
       }
     }
 
-    // 方式2：尝试抓取全文
+    // 方式2：尝试通过 Go 抓取服务获取全文
     if (article.url) {
-      const fullText = await fetchFullText(article.url)
-      if (fullText && fullText.content && fullText.content.length > (newContent?.length || 0)) {
-        newContent = fullText.content
+      try {
+        const scraperClient = getScraperClient()
+        const isAvailable = await scraperClient.isAvailable()
+
+        if (isAvailable) {
+          const fullText = await scraperClient.fetch({ url: article.url })
+          if (fullText && fullText.content) {
+            newContent = fullText.content || ''
+            // 如果 Go 服务返回了标题，也可以更新
+            if (fullText.title && !newTitle) {
+            newTitle = fullText.title
+            }
+          }
+        } else {
+          console.warn('[refresh] Go 抓取服务不可用，跳过全文抓取')
+        }
+      } catch (e) {
+        console.error('[refresh] Go 抓取服务全文抓取失败:', e)
       }
     }
 

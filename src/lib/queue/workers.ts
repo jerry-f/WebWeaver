@@ -5,13 +5,27 @@
  */
 
 import { Worker, Job } from 'bullmq'
-import { getRedisConnection } from './redis'
-import { QUEUE_NAMES, type FetchJobData, type SummaryJobData, type CredentialJobData } from './queues'
+import { getRedisConnection, publishJobStatus } from './redis'
+import {
+  QUEUE_NAMES,
+  type FetchJobData,
+  type SummaryJobData,
+  type CredentialJobData,
+  type SourceFetchJobData,
+  type CrawlDiscoveryJobData,
+  addFetchJobs
+} from './queues'
 import { getUnifiedFetcher } from '../fetchers/unified-fetcher'
 import { domainScheduler, extractDomainFromUrl } from '../scheduler/domain-scheduler'
 import { prisma } from '../prisma'
 import { refreshExpiredCredentials, refreshCredential } from '../tasks/refresh-credentials'
 import { queueArticleForSummary } from '../ai/queue'
+import { fetchRSS } from '../fetchers/rss'
+import { fetchScrape } from '../fetchers/scrape'
+import { startSiteCrawl, discoverPage, triggerContentFetch } from '../fetchers/sitecrawl'
+import { normalizeUrl } from '../utils/url-normalizer'
+import { calculateReadingTime } from '../utils/reading-time'
+import type { FetchedArticle, SourceConfig, SiteCrawlConfig } from '../fetchers/types'
 
 /**
  * Worker 配置
@@ -144,6 +158,8 @@ async function processSummaryJob(job: Job<SummaryJobData>): Promise<void> {
 let fetchWorker: Worker<FetchJobData> | null = null
 let summaryWorker: Worker<SummaryJobData> | null = null
 let credentialWorker: Worker<CredentialJobData> | null = null
+let sourceFetchWorker: Worker<SourceFetchJobData> | null = null
+let crawlDiscoveryWorker: Worker<CrawlDiscoveryJobData> | null = null
 
 /**
  * 凭证刷新任务处理函数
@@ -214,6 +230,247 @@ async function processCredentialJob(job: Job<CredentialJobData>): Promise<void> 
     }
 
     throw error
+  }
+}
+
+/**
+ * 源抓取任务处理函数
+ *
+ * 处理 RSS/Scrape/SiteCrawl 列表抓取
+ */
+async function processSourceFetchJob(job: Job<SourceFetchJobData>): Promise<void> {
+  const { jobId, sourceId, triggeredBy } = job.data
+
+  console.log(`[SourceFetchWorker] Processing job ${jobId} for source ${sourceId} (${triggeredBy})`)
+
+  // 1. 发布开始状态
+  await publishJobStatus({
+    jobId,
+    sourceId,
+    type: 'source_fetch',
+    status: 'started',
+    timestamp: Date.now()
+  })
+
+  try {
+    // 2. 获取源配置
+    const source = await prisma.source.findUnique({ where: { id: sourceId } })
+    if (!source) {
+      throw new Error('Source not found')
+    }
+
+    const config: SourceConfig = source.config ? JSON.parse(source.config) : {}
+    const fetchConfig = config.fetch || {}
+
+    // 3. 根据类型抓取
+    let articles: FetchedArticle[] = []
+    const fetchOptions = {
+      timeout: fetchConfig.timeout || 30000,
+      skipCredentials: false
+    }
+
+    switch (source.type.toLowerCase()) {
+      case 'rss':
+        articles = await fetchRSS(source.url, fetchOptions)
+        break
+
+      case 'scrape':
+        if (!config.scrape) {
+          throw new Error('Scrape config is required for scrape type sources')
+        }
+        articles = await fetchScrape(source.url, config.scrape, fetchOptions)
+        break
+
+      case 'sitecrawl':
+        // SiteCrawl 有独立的任务流
+        await startSiteCrawl(sourceId, jobId)
+        console.log(`[SourceFetchWorker] SiteCrawl started for ${source.name}`)
+        return
+
+      default:
+        throw new Error(`Unknown source type: ${source.type}`)
+    }
+
+    console.log(`[SourceFetchWorker] ${source.name}: 获取到 ${articles.length} 篇文章`)
+
+    // 4. 批量入库
+    const shouldFetchFullText = source.fetchFullText || fetchConfig.fetchFullText
+    const newArticles: { id: string; url: string }[] = []
+    let added = 0
+
+    for (const article of articles) {
+      try {
+        // 计算阅读时间
+        let readingTime: number | undefined
+        if (article.content) {
+          readingTime = calculateReadingTime(article.content)
+        }
+
+        // 入库时 contentStatus 设为 pending（如果需要全文抓取）
+        const contentStatus = shouldFetchFullText ? 'pending' : (article.content ? 'completed' : 'pending')
+
+        const result = await prisma.article.upsert({
+          where: {
+            sourceId_externalId: {
+              sourceId: source.id,
+              externalId: article.externalId
+            }
+          },
+          create: {
+            sourceId: source.id,
+            externalId: article.externalId,
+            title: article.title,
+            content: article.content,
+            url: article.url,
+            imageUrl: article.imageUrl,
+            author: article.author,
+            publishedAt: article.publishedAt,
+            readingTime,
+            category: source.category || null,
+            summaryStatus: 'pending',
+            contentStatus
+          },
+          update: {}
+        })
+
+        // 记录新增的文章
+        if (result && article.url) {
+          newArticles.push({ id: result.id, url: article.url })
+        }
+
+        added++
+      } catch {
+        // 唯一约束冲突，静默跳过
+      }
+    }
+
+    // 5. 推送全文抓取任务
+    let queued = 0
+    if (shouldFetchFullText && newArticles.length > 0) {
+      await addFetchJobs(
+        newArticles.map(a => ({
+          articleId: a.id,
+          url: a.url,
+          sourceId: source.id
+        }))
+      )
+      queued = newArticles.length
+      console.log(`[SourceFetchWorker] ${source.name}: 推送 ${queued} 个全文抓取任务`)
+    }
+
+    // 6. 发布完成状态
+    await publishJobStatus({
+      jobId,
+      sourceId,
+      type: 'source_fetch',
+      status: 'completed',
+      progress: {
+        current: added,
+        total: articles.length,
+        added,
+        queued
+      },
+      timestamp: Date.now()
+    })
+
+    console.log(`[SourceFetchWorker] Completed job ${jobId}: added=${added}, queued=${queued}`)
+  } catch (error) {
+    console.error(`[SourceFetchWorker] Failed job ${jobId}:`, error)
+
+    // 发布失败状态
+    await publishJobStatus({
+      jobId,
+      sourceId,
+      type: 'source_fetch',
+      status: 'failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: Date.now()
+    })
+
+    throw error
+  }
+}
+
+/**
+ * 全站爬取发现任务处理函数
+ */
+async function processCrawlDiscoveryJob(job: Job<CrawlDiscoveryJobData>): Promise<void> {
+  const { jobId, sourceId, url, depth } = job.data
+
+  console.log(`[CrawlDiscoveryWorker] Processing: ${url} (depth: ${depth})`)
+
+  // 1. 获取源配置
+  const source = await prisma.source.findUnique({ where: { id: sourceId } })
+  if (!source) {
+    throw new Error('Source not found')
+  }
+
+  const config: SourceConfig = source.config ? JSON.parse(source.config) : {}
+  const siteCrawlConfig: SiteCrawlConfig = config.siteCrawl || {}
+
+  // 2. 更新 CrawlUrl 状态
+  const normalized = normalizeUrl(url)
+  await prisma.crawlUrl.updateMany({
+    where: { sourceId, normalizedUrl: normalized },
+    data: { status: 'crawling' }
+  })
+
+  // 3. 使用 DomainScheduler 限流
+  const domain = extractDomainFromUrl(url)
+  await domainScheduler.acquireWithWait(domain)
+
+  try {
+    // 4. 执行发现
+    const result = await discoverPage(sourceId, url, depth, siteCrawlConfig, jobId)
+
+    // 5. 更新状态
+    await prisma.crawlUrl.updateMany({
+      where: { sourceId, normalizedUrl: normalized },
+      data: {
+        status: 'completed',
+        crawledAt: new Date()
+      }
+    })
+
+    domainScheduler.reportSuccess(domain)
+
+    console.log(`[CrawlDiscoveryWorker] Discovered ${result.discovered} links, queued ${result.queued}`)
+
+    // 6. 检查是否发现阶段完成，触发内容抓取
+    const pendingDiscovery = await prisma.crawlUrl.count({
+      where: { sourceId, status: 'pending' }
+    })
+
+    const crawlingCount = await prisma.crawlUrl.count({
+      where: { sourceId, status: 'crawling' }
+    })
+
+    // 只有当没有 pending 和 crawling 的任务时，才触发内容抓取
+    if (pendingDiscovery === 0 && crawlingCount === 0) {
+      console.log(`[CrawlDiscoveryWorker] Discovery complete for ${sourceId}, triggering content fetch`)
+      await triggerContentFetch(sourceId, jobId)
+
+      // 发布完成状态
+      await publishJobStatus({
+        jobId,
+        sourceId,
+        type: 'crawl_discovery',
+        status: 'completed',
+        timestamp: Date.now()
+      })
+    }
+  } catch (error) {
+    domainScheduler.reportFailure(domain)
+
+    await prisma.crawlUrl.updateMany({
+      where: { sourceId, normalizedUrl: normalized },
+      data: { status: 'failed' }
+    })
+
+    console.error(`[CrawlDiscoveryWorker] Failed: ${url}`, error)
+    throw error
+  } finally {
+    domainScheduler.release(domain)
   }
 }
 
@@ -320,12 +577,86 @@ export function startCredentialWorker(config: WorkerConfig = {}): Worker<Credent
 }
 
 /**
+ * 启动源抓取 Worker
+ */
+export function startSourceFetchWorker(config: WorkerConfig = {}): Worker<SourceFetchJobData> {
+  const cfg = { ...DEFAULT_CONFIG, ...config }
+
+  if (sourceFetchWorker) {
+    return sourceFetchWorker
+  }
+
+  sourceFetchWorker = new Worker<SourceFetchJobData>(
+    QUEUE_NAMES.SOURCE_FETCH,
+    processSourceFetchJob,
+    {
+      connection: getRedisConnection(),
+      concurrency: cfg.concurrency
+    }
+  )
+
+  sourceFetchWorker.on('completed', (job) => {
+    console.log(`[SourceFetchWorker] Job ${job.id} completed`)
+  })
+
+  sourceFetchWorker.on('failed', (job, error) => {
+    console.error(`[SourceFetchWorker] Job ${job?.id} failed:`, error.message)
+  })
+
+  sourceFetchWorker.on('error', (error) => {
+    console.error('[SourceFetchWorker] Error:', error)
+  })
+
+  console.log(`[SourceFetchWorker] Started with concurrency ${cfg.concurrency}`)
+
+  return sourceFetchWorker
+}
+
+/**
+ * 启动全站爬取发现 Worker
+ */
+export function startCrawlDiscoveryWorker(config: WorkerConfig = {}): Worker<CrawlDiscoveryJobData> {
+  const cfg = { ...DEFAULT_CONFIG, ...config }
+
+  if (crawlDiscoveryWorker) {
+    return crawlDiscoveryWorker
+  }
+
+  crawlDiscoveryWorker = new Worker<CrawlDiscoveryJobData>(
+    QUEUE_NAMES.CRAWL_DISCOVERY,
+    processCrawlDiscoveryJob,
+    {
+      connection: getRedisConnection(),
+      concurrency: cfg.concurrency
+    }
+  )
+
+  crawlDiscoveryWorker.on('completed', (job) => {
+    console.log(`[CrawlDiscoveryWorker] Job ${job.id} completed`)
+  })
+
+  crawlDiscoveryWorker.on('failed', (job, error) => {
+    console.error(`[CrawlDiscoveryWorker] Job ${job?.id} failed:`, error.message)
+  })
+
+  crawlDiscoveryWorker.on('error', (error) => {
+    console.error('[CrawlDiscoveryWorker] Error:', error)
+  })
+
+  console.log(`[CrawlDiscoveryWorker] Started with concurrency ${cfg.concurrency}`)
+
+  return crawlDiscoveryWorker
+}
+
+/**
  * 启动所有 Worker
  */
 export function startAllWorkers(config: WorkerConfig = {}): void {
   startFetchWorker(config)
   startSummaryWorker(config)
   startCredentialWorker(config)
+  startSourceFetchWorker(config)
+  startCrawlDiscoveryWorker(config)
 }
 
 /**
@@ -343,6 +674,14 @@ export async function stopAllWorkers(): Promise<void> {
   if (credentialWorker) {
     await credentialWorker.close()
     credentialWorker = null
+  }
+  if (sourceFetchWorker) {
+    await sourceFetchWorker.close()
+    sourceFetchWorker = null
+  }
+  if (crawlDiscoveryWorker) {
+    await crawlDiscoveryWorker.close()
+    crawlDiscoveryWorker = null
   }
   console.log('[Workers] All workers stopped')
 }

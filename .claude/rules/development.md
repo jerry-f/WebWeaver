@@ -48,6 +48,10 @@
 - 禁止 `@apply` 自定义颜色类，改用原生 CSS
 - 详见：[docs/Tailwind-CSS-v4-样式配置指南.md](../../docs/Tailwind-CSS-v4-样式配置指南.md)
 
+## 队列系统 (BullMQ)
+
+- jobId 不能包含冒号 `:`，使用下划线 `_` 替代
+
 ## 数据库
 
 - Schema 修改后运行 `npm run db:push`

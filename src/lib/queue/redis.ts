@@ -83,8 +83,58 @@ export async function closeRedisConnection(): Promise<void> {
 export const CHANNELS = {
   SCHEDULER_RELOAD: 'newsflow:scheduler:reload',
   SCHEDULER_RELOAD_ALL: 'newsflow:scheduler:reload-all',
-  CONFIG_RELOAD: 'newsflow:config:reload'
+  CONFIG_RELOAD: 'newsflow:config:reload',
+  JOB_STATUS: 'newsflow:job:status'
 } as const
+
+/**
+ * 任务状态消息类型
+ */
+export type JobType = 'source_fetch' | 'crawl_discovery' | 'article_fetch'
+
+/**
+ * 任务状态
+ */
+export type JobStatus = 'started' | 'progress' | 'completed' | 'failed'
+
+/**
+ * 任务状态消息
+ * 用于 Worker 向前端通知任务进度
+ */
+export interface JobStatusMessage {
+  /** 任务 ID */
+  jobId: string
+  /** 信息源 ID */
+  sourceId: string
+  /** 任务类型 */
+  type: JobType
+  /** 任务状态 */
+  status: JobStatus
+  /** 进度信息 */
+  progress?: {
+    /** 当前进度 */
+    current: number
+    /** 总数 */
+    total: number
+    /** 新增文章数 */
+    added?: number
+    /** 入队数 */
+    queued?: number
+  }
+  /** 错误信息 */
+  error?: string
+  /** 时间戳 */
+  timestamp: number
+}
+
+/**
+ * 发布任务状态消息
+ * 用于 Worker 通知前端任务进度
+ */
+export async function publishJobStatus(message: JobStatusMessage): Promise<void> {
+  const redis = getRedisConnection()
+  await redis.publish(CHANNELS.JOB_STATUS, JSON.stringify(message))
+}
 
 /**
  * 发布任务重载消息

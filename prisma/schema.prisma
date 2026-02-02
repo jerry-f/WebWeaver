@@ -10,7 +10,7 @@ datasource db {
 model Source {
   id            String   @id @default(cuid())
   name          String
-  type          String   // rss, api, scrape
+  type          String   // rss, scrape, sitecrawl
   url           String
   category      String?  // 分类：tech, ai, frontend, backend, investment 等
   config        String?  // JSON config for API keys, selectors, etc.
@@ -20,6 +20,7 @@ model Source {
   updatedAt     DateTime @updatedAt
   articles      Article[]
   subscriptions Subscription[]
+  crawlUrls     CrawlUrl[]
 
   // 认证关联（可选）
   credentialId  String?
@@ -250,4 +251,27 @@ model SystemConfig {
   key       String   @unique
   value     String   // JSON 格式存储
   updatedAt DateTime @updatedAt
+}
+
+// 全站爬取 URL 记录
+model CrawlUrl {
+  id            String   @id @default(cuid())
+  sourceId      String
+  source        Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  url           String   // 完整 URL
+  normalizedUrl String   // 标准化 URL（去重用）
+  depth         Int      @default(0)  // 发现深度（种子 URL = 0）
+  status        String   @default("pending")  // pending/crawling/completed/failed
+
+  title         String?  // 从 <a> 标签提取的文本
+  parentUrl     String?  // 从哪个页面发现的
+  articleId     String?  // 关联的文章 ID
+
+  discoveredAt  DateTime @default(now())
+  crawledAt     DateTime?
+
+  @@unique([sourceId, normalizedUrl])
+  @@index([sourceId, status])
+  @@index([status])
 }

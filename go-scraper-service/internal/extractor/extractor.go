@@ -35,11 +35,33 @@ func New() *Extractor {
 }
 
 // Extract 提取文章内容
+//
+// 对原始 HTML 进行完整的内容提取处理流程：
+//  1. Cloudflare Email Protection 解码 - 还原被混淆的邮箱地址
+//  2. 懒加载图片预处理 - 将 data-src 等属性转换为 src
+//  3. Readability 正文提取 - 使用 Mozilla Readability 算法提取文章主体
+//  4. 图片 URL 处理 - 转换为绝对 URL，添加懒加载属性
+//  5. HTML 净化 - 移除不安全的标签和属性
+//  6. 阅读时间计算 - 根据中英文字数估算
+//
+// 参数：
+//   - html: 原始 HTML 字符串
+//   - pageURL: 页面 URL（用于解析相对链接）
+//
+// 返回：
+//   - *ExtractResult: 提取结果，包含净化后的内容、标题、摘要等
+//   - error: 处理过程中的错误
 func (e *Extractor) Extract(html, pageURL string) (*ExtractResult, error) {
 	parsedURL, err := url.Parse(pageURL)
 	if err != nil {
 		return nil, err
 	}
+
+
+	// 0. 解码 Cloudflare Email Protection 混淆的邮箱
+	// Cloudflare 会将 mailto: 链接和邮箱文本替换为 /cdn-cgi/l/email-protection#... 格式
+	// 静态抓取无法执行 JS 解码，需要手动还原
+	html = DecodeCloudflareEmails(html)
 
 	// 1. 预处理懒加载图片
 	preprocessedHTML := e.imageProcessor.ProcessLazyImages(html)
