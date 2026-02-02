@@ -1,17 +1,17 @@
 import { prisma } from '../prisma'
 import { fetchRSS } from './rss'
-import { fetchFullText } from './fulltext'
 import { fetchScrape } from './scrape'
 import { FetchedArticle, SourceConfig } from './types'
 import { calculateReadingTime } from '../utils/reading-time'
 import { queueArticleForSummary } from '../ai/queue'
+import { getUnifiedFetcher } from './unified-fetcher'
 
 /**
  * 抓取单个信息源的文章
  *
  * 这是文章抓取的核心函数，负责：
  * 1. 根据信息源类型（RSS/Scrape）获取文章列表
- * 2. 可选地抓取文章全文内容
+ * 2. 可选地抓取文章全文内容（使用统一抓取服务，自动注入凭证）
  * 3. 计算阅读时间
  * 4. 将文章存入数据库（自动去重）
  * 5. 将新文章加入 AI 摘要生成队列
@@ -64,21 +64,33 @@ export async function fetchSource(sourceId: string): Promise<{ added: number; er
 
   // ========== 第三步：处理每篇文章并存入数据库 ==========
   let added = 0 // 记录成功新增的文章数量
+  const fetcher = getUnifiedFetcher()
 
   for (const article of articles) {
     try {
       let content = article.content
-      let textContent: string | undefined  // 新增：纯文本内容
+      let textContent: string | undefined  // 纯文本内容
       let readingTime: number | undefined
+      let fetchStrategy: string | undefined
 
       // ---------- 3.1 全文抓取（可选） ----------
       // 如果信息源启用了 fetchFullText 选项，则访问文章原始 URL 获取完整正文
-      // 使用 @mozilla/readability 库提取正文，过滤掉广告和导航等干扰内容
+      // 使用统一抓取服务，自动注入凭证
       if (source.fetchFullText && article.url) {
-        const fullText = await fetchFullText(article.url)
-        if (fullText?.content) {
-          content = fullText.content          // HTML 格式（用于展示）
-          textContent = fullText.textContent  // 纯文本（用于 AI/搜索）
+        const result = await fetcher.fetch(article.url, {
+          sourceId: source.id,
+          timeout: 30000
+        })
+        
+        if (result.success && result.content) {
+          content = result.content          // HTML 格式（用于展示）
+          textContent = result.textContent  // 纯文本（用于 AI/搜索）
+          fetchStrategy = result.strategy   // 记录使用的策略
+          
+          // 记录凭证过期
+          if (result.credentialExpired) {
+            errors.push(`凭证已过期: ${article.url}`)
+          }
         }
       }
 
@@ -119,7 +131,7 @@ export async function fetchSource(sourceId: string): Promise<{ added: number; er
           category: source?.category || null,      // 从信息源继承分类
           summaryStatus: 'pending',       // AI 摘要状态：待生成
           contentStatus: content ? 'completed' : 'pending',  // 内容抓取状态
-          fetchStrategy: source.fetchFullText ? 'fetch' : undefined  // 抓取策略
+          fetchStrategy                   // 抓取策略
         },
         update: {} // 已存在的文章不做任何更新
       })

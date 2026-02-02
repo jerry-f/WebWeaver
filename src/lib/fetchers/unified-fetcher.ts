@@ -1,0 +1,356 @@
+/**
+ * 统一抓取服务
+ *
+ * 整合所有抓取策略，自动处理：
+ * - 站点凭证注入（Cookie）
+ * - 策略选择（Go Scraper / Browserless / 本地）
+ * - 失败重试和回退
+ * - 凭证过期检测
+ */
+
+import { GoScraperClient, type GoScraperResponse } from './clients/go-scraper'
+import { CredentialManager } from '../auth/credential-manager'
+import { fetchFullText, type FullTextResult } from './fulltext'
+
+/**
+ * 抓取选项
+ */
+export interface UnifiedFetchOptions {
+  /** 超时时间（毫秒） */
+  timeout?: number
+  /** Referer */
+  referer?: string
+  /** 强制使用指定策略 */
+  strategy?: 'go' | 'browserless' | 'local' | 'auto'
+  /** 是否跳过凭证 */
+  skipCredentials?: boolean
+  /** 源 ID（用于关联数据库凭证） */
+  sourceId?: string
+}
+
+/**
+ * 统一抓取结果
+ */
+export interface UnifiedFetchResult {
+  /** 是否成功 */
+  success: boolean
+  /** 最终 URL（可能重定向） */
+  finalUrl?: string
+  /** 文章标题 */
+  title?: string
+  /** HTML 内容 */
+  content?: string
+  /** 纯文本内容 */
+  textContent?: string
+  /** 摘要 */
+  excerpt?: string
+  /** 作者 */
+  byline?: string
+  /** 网站名称 */
+  siteName?: string
+  /** 图片列表 */
+  images?: Array<{ originalUrl: string; alt?: string }>
+  /** 使用的策略 */
+  strategy: string
+  /** 耗时（毫秒） */
+  duration: number
+  /** 是否使用了认证 */
+  authenticated: boolean
+  /** 凭证是否过期 */
+  credentialExpired?: boolean
+  /** 错误信息 */
+  error?: string
+}
+
+/**
+ * 统一抓取服务类
+ */
+export class UnifiedFetcher {
+  private goClient: GoScraperClient
+  private credentialManager: CredentialManager
+  private goScraperAvailable: boolean | null = null
+
+  constructor() {
+    this.goClient = new GoScraperClient()
+    this.credentialManager = new CredentialManager()
+  }
+
+  /**
+   * 抓取文章
+   */
+  async fetch(url: string, options: UnifiedFetchOptions = {}): Promise<UnifiedFetchResult> {
+    const start = Date.now()
+    const strategy = options.strategy || 'auto'
+
+    // 准备请求头（包含 Cookie）
+    const headers: Record<string, string> = {}
+    let authenticated = false
+
+    if (!options.skipCredentials) {
+      const cookie = this.credentialManager.getCookieForUrl(url)
+      if (cookie) {
+        headers['Cookie'] = cookie
+        authenticated = true
+      }
+    }
+
+    // 选择抓取策略
+    let result: UnifiedFetchResult
+
+    if (strategy === 'local') {
+      result = await this.fetchLocal(url, options, authenticated)
+    } else if (strategy === 'go' || (strategy === 'auto' && await this.isGoScraperAvailable())) {
+      result = await this.fetchWithGoScraper(url, headers, options, authenticated)
+
+      // Go Scraper 失败时回退到本地
+      if (!result.success && strategy === 'auto') {
+        console.log(`[UnifiedFetcher] Go Scraper 失败，回退到本地抓取: ${url}`)
+        result = await this.fetchLocal(url, options, authenticated)
+      }
+    } else {
+      result = await this.fetchLocal(url, options, authenticated)
+    }
+
+    result.duration = Date.now() - start
+    result.authenticated = authenticated
+
+    // 检测凭证过期
+    if (authenticated && result.error?.includes('403')) {
+      result.credentialExpired = true
+      console.warn(`[UnifiedFetcher] 凭证可能已过期: ${this.extractDomain(url)}`)
+    }
+
+    return result
+  }
+
+  /**
+   * 使用 Go Scraper 抓取
+   */
+  private async fetchWithGoScraper(
+    url: string,
+    headers: Record<string, string>,
+    options: UnifiedFetchOptions,
+    authenticated: boolean
+  ): Promise<UnifiedFetchResult> {
+    try {
+      const response = await this.goClient.fetch({
+        url,
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
+        referer: options.referer,
+        timeout: options.timeout
+      })
+
+      if (!response || response.error) {
+        return {
+          success: false,
+          strategy: 'go',
+          duration: 0,
+          authenticated,
+          error: response?.error || 'Go Scraper 返回空结果'
+        }
+      }
+
+      return {
+        success: true,
+        finalUrl: response.finalUrl,
+        title: response.title,
+        content: response.content,
+        textContent: response.textContent,
+        excerpt: response.excerpt,
+        byline: response.byline,
+        siteName: response.siteName,
+        images: response.images?.map(img => ({
+          originalUrl: img.originalUrl,
+          alt: img.alt
+        })),
+        strategy: 'go',
+        duration: response.duration,
+        authenticated
+      }
+    } catch (error) {
+      return {
+        success: false,
+        strategy: 'go',
+        duration: 0,
+        authenticated,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  }
+
+  /**
+   * 使用本地 Readability 抓取
+   */
+  private async fetchLocal(
+    url: string,
+    options: UnifiedFetchOptions,
+    authenticated: boolean
+  ): Promise<UnifiedFetchResult> {
+    try {
+      // 本地抓取暂不支持 Cookie 注入
+      // TODO: 后续可以扩展 fetchFullText 支持自定义 headers
+      const result = await fetchFullText(url)
+
+      if (!result) {
+        return {
+          success: false,
+          strategy: 'local',
+          duration: 0,
+          authenticated: false, // 本地抓取未使用认证
+          error: '本地抓取失败'
+        }
+      }
+
+      return {
+        success: true,
+        title: result.title,
+        content: result.content,
+        textContent: result.textContent,
+        excerpt: result.excerpt,
+        byline: result.byline,
+        siteName: result.siteName,
+        images: result.images?.map(img => ({
+          originalUrl: img.originalUrl,
+          alt: img.alt
+        })),
+        strategy: 'local',
+        duration: 0,
+        authenticated: false
+      }
+    } catch (error) {
+      return {
+        success: false,
+        strategy: 'local',
+        duration: 0,
+        authenticated: false,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  }
+
+  /**
+   * 检查 Go Scraper 是否可用
+   */
+  private async isGoScraperAvailable(): Promise<boolean> {
+    // 缓存检查结果 60 秒
+    if (this.goScraperAvailable !== null) {
+      return this.goScraperAvailable
+    }
+
+    try {
+      this.goScraperAvailable = await this.goClient.isAvailable()
+
+      // 60 秒后重新检查
+      setTimeout(() => {
+        this.goScraperAvailable = null
+      }, 60000)
+
+      return this.goScraperAvailable
+    } catch {
+      this.goScraperAvailable = false
+      return false
+    }
+  }
+
+  /**
+   * 批量抓取
+   */
+  async fetchBatch(
+    urls: string[],
+    options: UnifiedFetchOptions = {}
+  ): Promise<UnifiedFetchResult[]> {
+    const results: UnifiedFetchResult[] = []
+
+    // 按域名分组，为每个域名准备 Cookie
+    const urlsWithCookies = urls.map(url => ({
+      url,
+      cookie: options.skipCredentials ? null : this.credentialManager.getCookieForUrl(url)
+    }))
+
+    // 使用 Go Scraper 批量抓取
+    if (await this.isGoScraperAvailable()) {
+      // TODO: 扩展 Go Scraper 批量接口支持 per-URL headers
+      // 目前先逐个抓取
+      for (const { url, cookie } of urlsWithCookies) {
+        const result = await this.fetch(url, {
+          ...options,
+          skipCredentials: !cookie
+        })
+        results.push(result)
+      }
+    } else {
+      // 本地并发抓取
+      const promises = urlsWithCookies.map(({ url }) =>
+        this.fetch(url, { ...options, strategy: 'local' })
+      )
+      results.push(...await Promise.all(promises))
+    }
+
+    return results
+  }
+
+  /**
+   * 获取需要认证的域名列表
+   */
+  getAuthenticatedDomains(): string[] {
+    return this.credentialManager.getAuthenticatedDomains()
+  }
+
+  /**
+   * 检查 URL 是否需要认证
+   */
+  requiresAuth(url: string): boolean {
+    return this.credentialManager.requiresAuth(url)
+  }
+
+  /**
+   * 重新加载凭证配置
+   */
+  reloadCredentials(): void {
+    this.credentialManager.reload()
+  }
+
+  /**
+   * 提取域名
+   */
+  private extractDomain(url: string): string {
+    try {
+      return new URL(url).hostname
+    } catch {
+      return ''
+    }
+  }
+}
+
+// 单例
+let _instance: UnifiedFetcher | null = null
+
+/**
+ * 获取统一抓取服务单例
+ */
+export function getUnifiedFetcher(): UnifiedFetcher {
+  if (!_instance) {
+    _instance = new UnifiedFetcher()
+  }
+  return _instance
+}
+
+/**
+ * 抓取文章（快捷方法）
+ */
+export async function fetchArticle(
+  url: string,
+  options?: UnifiedFetchOptions
+): Promise<UnifiedFetchResult> {
+  return getUnifiedFetcher().fetch(url, options)
+}
+
+/**
+ * 批量抓取文章
+ */
+export async function fetchArticles(
+  urls: string[],
+  options?: UnifiedFetchOptions
+): Promise<UnifiedFetchResult[]> {
+  return getUnifiedFetcher().fetchBatch(urls, options)
+}

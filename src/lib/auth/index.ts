@@ -26,3 +26,20 @@ export {
   hasSiteLoginConfig,
   getSupportedDomains
 } from './site-configs'
+
+// 凭证管理器（文件存储）
+export {
+  CredentialManager,
+  getCredentialManager,
+  getCookieForUrl,
+  requiresAuth
+} from './credential-manager'
+
+// 凭证状态检测
+export {
+  CredentialChecker,
+  getCredentialChecker,
+  checkAllCredentials,
+  type CredentialStatus,
+  type CredentialCheckResult
+} from './credential-checker'
