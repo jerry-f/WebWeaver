@@ -6,6 +6,7 @@
 
 import { Queue, Job } from 'bullmq'
 import { getRedisConnection } from './redis'
+import type { FetchStrategy } from '../fetchers/types'
 
 /**
  * 抓取任务数据
@@ -18,7 +19,7 @@ export interface FetchJobData {
   /** 信息源 ID */
   sourceId: string
   /** 抓取策略 */
-  strategy?: 'auto' | 'fetch' | 'browserless' | 'go'
+  strategy?: FetchStrategy
   /** 优先级 (1-10, 1 最高) */
   priority?: number
   /** 重试次数 */
@@ -53,10 +54,10 @@ export interface CredentialJobData {
  * 队列名称
  */
 export const QUEUE_NAMES = {
-  FETCH: 'newsflow:fetch',
-  SUMMARY: 'newsflow:summary',
-  IMAGE: 'newsflow:image',
-  CREDENTIAL: 'newsflow:credential'
+  FETCH: 'newsflow-fetch',
+  SUMMARY: 'newsflow-summary',
+  IMAGE: 'newsflow-image',
+  CREDENTIAL: 'newsflow-credential'
 } as const
 
 /**

@@ -176,3 +176,92 @@ services:
 
 volumes:
   redis-data:
+
+  # ========================================
+  # NewsFlow 应用服务 （生产部署：取消注释，实现完全容器化）
+  # ========================================
+
+  # Web 服务（Next.js 应用）
+  # HTTP: http://localhost:3000
+  # web:
+  #   build:
+  #     context: .
+  #     target: web # ← 只构建到 "web" 阶段
+  #   container_name: newsflow-web
+  #   environment:
+  #     - DATABASE_URL=file:/app/data/newsflow.db
+  #     - REDIS_URL=redis://redis:6379
+  #     - GO_SCRAPER_URL=http://go-scraper:8080
+  #     - DISABLE_SCHEDULER=true
+  #     - DISABLE_WORKERS=true
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - app-data:/app/data
+  #   depends_on:
+  #     - redis
+  #     - go-scraper
+  #   restart: unless-stopped
+
+  # Cron 调度器
+  # 定时触发 RSS 抓取、凭证刷新等任务
+  scheduler:
+    build:
+      context: .
+      target: scheduler # ← 只构建到 "scheduler" 阶段
+    container_name: newsflow-scheduler
+    environment:
+      - DATABASE_URL=file:/app/data/newsflow.db
+      - REDIS_URL=redis://redis:6379
+      - GO_SCRAPER_URL=http://go-scraper:8080
+    volumes:
+      - app-data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      go-scraper:
+        condition: service_healthy
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # BullMQ Workers
+  # 处理队列任务：全文抓取、AI 摘要、凭证刷新
+  worker:
+    build:
+      context: .
+      target: worker # ← 只构建到 "worker" 阶段
+
+    container_name: newsflow-worker
+    environment:
+      - DATABASE_URL=file:/app/data/newsflow.db
+      - REDIS_URL=redis://redis:6379
+      - GO_SCRAPER_URL=http://go-scraper:8080
+      - WORKER_CONCURRENCY=10
+      - ENABLE_SCHEDULER=false
+    volumes:
+      - app-data:/app/data
+    depends_on:
+      redis:
+        condition: service_healthy
+      go-scraper:
+        condition: service_healthy
+    deploy:
+      replicas: 1  # 可根据需要扩展
+      resources:
+        limits:
+          memory: 512M
+        reservations:
+          memory: 128M
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  app-data:

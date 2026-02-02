@@ -7,10 +7,11 @@
 import { Worker, Job } from 'bullmq'
 import { getRedisConnection } from './redis'
 import { QUEUE_NAMES, type FetchJobData, type SummaryJobData, type CredentialJobData } from './queues'
-import { fetchWithPipeline } from '../fetchers/clients/pipeline'
-import { fetchWithGoScraper, checkGoScraperHealth } from '../fetchers/clients/go-scraper'
+import { getUnifiedFetcher } from '../fetchers/unified-fetcher'
+import { domainScheduler, extractDomainFromUrl } from '../scheduler/domain-scheduler'
 import { prisma } from '../prisma'
 import { refreshExpiredCredentials, refreshCredential } from '../tasks/refresh-credentials'
+import { queueArticleForSummary } from '../ai/queue'
 
 /**
  * Worker 配置
@@ -32,47 +33,60 @@ const DEFAULT_CONFIG: WorkerConfig = {
 
 /**
  * 抓取任务处理函数
+ *
+ * 集成域名调度器进行限速和熔断保护
  */
 async function processFetchJob(job: Job<FetchJobData>): Promise<void> {
-  const { articleId, url, strategy } = job.data
+  const { articleId, url, sourceId, strategy } = job.data
+  const domain = extractDomainFromUrl(url)
 
-  console.log(`[FetchWorker] Processing job ${job.id}: ${url}`)
+  console.log(`[FetchWorker] Processing job ${job.id}: ${url} (domain: ${domain})`)
+
+  // 1. 检查熔断状态
+  if (domainScheduler.isCircuitOpen(domain)) {
+    console.warn(`[FetchWorker] Domain ${domain} is circuit-open, skipping job ${job.id}`)
+    throw new Error(`Domain ${domain} is temporarily blocked due to repeated failures`)
+  }
+
+  // 2. 获取域名许可（等待限速）
+  await domainScheduler.acquireWithWait(domain)
 
   try {
-    let result = null
-
-    // 根据策略选择抓取方式
-    if (strategy === 'go') {
-      // 使用 Go 抓取服务
-      const goAvailable = await checkGoScraperHealth()
-      if (goAvailable) {
-        result = await fetchWithGoScraper(url)
-      }
-    }
-
-    // 回退到 Pipeline（自动选择策略）
-    if (!result) {
-      result = await fetchWithPipeline(url)
-    }
-
-    if (!result) {
-      throw new Error('Failed to fetch content')
-    }
-
-    // 更新数据库
-    await prisma.article.update({
-      where: { id: articleId },
-      data: {
-        content: result.content,
-        textContent: result.textContent,
-        contentStatus: 'completed',
-        fetchStrategy: result.strategy,
-        fetchDuration: result.duration
-      }
+    // 3. 使用统一抓取器（自动处理凭证和策略选择）
+    const fetcher = getUnifiedFetcher()
+    const result = await fetcher.fetch(url, {
+      sourceId,
+      strategy: strategy || 'auto',
+      timeout: 30000
     })
 
-    console.log(`[FetchWorker] Completed job ${job.id}: ${result.strategy}, ${result.duration}ms`)
+    if (result.success && result.content) {
+      // 4. 更新数据库
+      await prisma.article.update({
+        where: { id: articleId },
+        data: {
+          content: result.content,
+          textContent: result.textContent,
+          contentStatus: 'completed',
+          fetchStrategy: result.strategy,
+          fetchDuration: result.duration
+        }
+      })
+
+      // 5. 报告成功（重置退避）
+      domainScheduler.reportSuccess(domain)
+
+      // 6. 将文章加入 AI 摘要队列
+      queueArticleForSummary(articleId)
+
+      console.log(`[FetchWorker] Completed job ${job.id}: ${result.strategy}, ${result.duration}ms`)
+    } else {
+      throw new Error(result.error || 'Failed to fetch content')
+    }
   } catch (error) {
+    // 7. 报告失败（触发退避/熔断）
+    domainScheduler.reportFailure(domain)
+
     console.error(`[FetchWorker] Failed job ${job.id}:`, error)
 
     // 更新失败状态
@@ -84,6 +98,9 @@ async function processFetchJob(job: Job<FetchJobData>): Promise<void> {
     })
 
     throw error
+  } finally {
+    // 8. 释放许可
+    domainScheduler.release(domain)
   }
 }
 

@@ -1,4 +1,13 @@
 /**
+ * 抓取策略类型
+ * - auto: 自动选择（优先 Go Scraper）
+ * - go: 强制使用 Go Scraper
+ * - browserless: 强制使用浏览器渲染
+ * - local: 强制使用本地抓取
+ */
+export type FetchStrategy = 'auto' | 'go' | 'browserless' | 'local'
+
+/**
  * 抓取到的文章数据结构
  *
  * 这是从各种来源（RSS/Scrape）抓取后的统一数据格式
@@ -176,7 +185,7 @@ export interface SourceFetchConfig {
    * - browserless: 强制使用浏览器渲染
    * - local: 强制使用本地抓取
    */
-  strategy?: 'auto' | 'go' | 'browserless' | 'local'
+  strategy?: FetchStrategy
 
   /**
    * 是否启用全文抓取

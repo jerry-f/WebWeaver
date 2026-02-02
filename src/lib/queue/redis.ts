@@ -74,3 +74,32 @@ export async function closeRedisConnection(): Promise<void> {
     defaultConnection = null
   }
 }
+
+// ============ Pub/Sub 通道定义 ============
+
+/**
+ * Pub/Sub 通道名称
+ */
+export const CHANNELS = {
+  SCHEDULER_RELOAD: 'newsflow:scheduler:reload',
+  SCHEDULER_RELOAD_ALL: 'newsflow:scheduler:reload-all'
+} as const
+
+/**
+ * 发布任务重载消息
+ * 用于通知 Scheduler 进程重新加载指定任务
+ */
+export async function publishTaskReload(taskId: string): Promise<void> {
+  const redis = getRedisConnection()
+  await redis.publish(CHANNELS.SCHEDULER_RELOAD, taskId)
+  console.log(`[Redis] 已发布任务重载消息: ${taskId}`)
+}
+
+/**
+ * 发布全部重载消息
+ */
+export async function publishReloadAll(): Promise<void> {
+  const redis = getRedisConnection()
+  await redis.publish(CHANNELS.SCHEDULER_RELOAD_ALL, 'reload')
+  console.log('[Redis] 已发布全部任务重载消息')
+}

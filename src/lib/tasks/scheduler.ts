@@ -7,12 +7,18 @@
 import cron, { type ScheduledTask } from 'node-cron'
 import { prisma } from '../prisma'
 import { getCredentialQueue } from '../queue/queues'
+import { fetchAllSources } from '../fetchers'
+import { createRedisConnection, CHANNELS } from '../queue/redis'
+import type IORedis from 'ioredis'
 
 // 存储已注册的 cron 任务
 const scheduledTasks: Map<string, ScheduledTask> = new Map()
 
 // 调度器是否已初始化
 let initialized = false
+
+// Redis 订阅连接
+let subscriber: IORedis | null = null
 
 /**
  * 任务类型枚举
@@ -49,11 +55,39 @@ export async function initScheduler(): Promise<void> {
       scheduleTask(task)
     }
 
+    // 订阅 Redis 通道，监听任务变更通知
+    await subscribeToReloadChannel()
+
     initialized = true
     console.log(`[Scheduler] 已加载 ${tasks.length} 个定时任务`)
   } catch (error) {
     console.error('[Scheduler] 初始化失败:', error)
   }
+}
+
+/**
+ * 订阅 Redis 重载通道
+ * 用于接收来自 Web API 的任务变更通知
+ */
+async function subscribeToReloadChannel(): Promise<void> {
+  // Pub/Sub 需要独立连接
+  subscriber = createRedisConnection()
+
+  subscriber.subscribe(CHANNELS.SCHEDULER_RELOAD, CHANNELS.SCHEDULER_RELOAD_ALL)
+
+  subscriber.on('message', async (channel, message) => {
+    console.log(`[Scheduler] 收到重载消息: channel=${channel}, message=${message}`)
+
+    if (channel === CHANNELS.SCHEDULER_RELOAD) {
+      // 重载单个任务
+      await reloadTask(message)
+    } else if (channel === CHANNELS.SCHEDULER_RELOAD_ALL) {
+      // 重载所有任务
+      await reloadAllTasks()
+    }
+  })
+
+  console.log('[Scheduler] 已订阅 Redis 重载通道')
 }
 
 /**
@@ -82,7 +116,30 @@ function scheduleTask(task: { id: string; name: string; type: string; schedule: 
           await getCredentialQueue().add('refresh-all', { taskId: task.id })
           break
 
-        // 其他任务类型可以在这里添加
+        case TASK_TYPES.FETCH:
+          // 触发所有信息源的抓取
+          console.log(`[Scheduler] 开始抓取所有信息源...`)
+          const results = await fetchAllSources()
+          const totalAdded = results.reduce((sum, r) => sum + r.added, 0)
+          const totalQueued = results.reduce((sum, r) => sum + r.queued, 0)
+          console.log(`[Scheduler] 抓取完成: 新增 ${totalAdded} 篇文章, 队列 ${totalQueued} 个任务`)
+
+          // 记录任务日志
+          await prisma.taskLog.create({
+            data: {
+              taskId: task.id,
+              status: 'success',
+              message: `抓取完成: 新增 ${totalAdded} 篇, 队列 ${totalQueued} 个任务`,
+              duration: 0
+            }
+          })
+          break
+
+        case TASK_TYPES.CLEANUP:
+          // TODO: 实现清理逻辑
+          console.log(`[Scheduler] 清理任务暂未实现`)
+          break
+
         default:
           console.warn(`[Scheduler] 未知任务类型: ${task.type}`)
       }
@@ -146,19 +203,46 @@ export async function reloadTask(taskId: string): Promise<void> {
  */
 export async function reloadAllTasks(): Promise<void> {
   console.log('[Scheduler] 重新加载所有任务...')
-  stopScheduler()
+
+  // 只停止 cron 任务，保留 Redis 订阅
+  for (const [id, task] of scheduledTasks) {
+    task.stop()
+  }
+  scheduledTasks.clear()
+
   initialized = false
-  await initScheduler()
+
+  // 重新加载任务（不重新订阅 Redis）
+  const tasks = await prisma.task.findMany({
+    where: { enabled: true }
+  })
+
+  for (const task of tasks) {
+    scheduleTask(task)
+  }
+
+  initialized = true
+  console.log(`[Scheduler] 已重新加载 ${tasks.length} 个定时任务`)
 }
 
 /**
  * 停止所有任务
  */
-export function stopScheduler(): void {
+export async function stopScheduler(): Promise<void> {
+  // 停止所有 cron 任务
   for (const [id, task] of scheduledTasks) {
     task.stop()
   }
   scheduledTasks.clear()
+
+  // 关闭 Redis 订阅连接
+  if (subscriber) {
+    await subscriber.unsubscribe()
+    await subscriber.quit()
+    subscriber = null
+    console.log('[Scheduler] Redis 订阅已关闭')
+  }
+
   console.log('[Scheduler] 所有任务已停止')
 }
 
@@ -194,6 +278,18 @@ export async function triggerTask(taskId: string): Promise<void> {
   switch (task.type) {
     case TASK_TYPES.REFRESH_CREDENTIALS:
       await getCredentialQueue().add('refresh-all', { taskId: task.id, manual: true })
+      break
+
+    case TASK_TYPES.FETCH:
+      // 手动触发抓取
+      console.log(`[Scheduler] 手动触发抓取所有信息源...`)
+      fetchAllSources().then(results => {
+        const totalAdded = results.reduce((sum, r) => sum + r.added, 0)
+        const totalQueued = results.reduce((sum, r) => sum + r.queued, 0)
+        console.log(`[Scheduler] 手动抓取完成: 新增 ${totalAdded} 篇文章, 队列 ${totalQueued} 个任务`)
+      }).catch(err => {
+        console.error(`[Scheduler] 手动抓取失败:`, err)
+      })
       break
 
     default:

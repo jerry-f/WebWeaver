@@ -86,6 +86,7 @@ const DEFAULT_CONFIG: GoScraperConfig = {
 
 /**
  * Go 抓取服务客户端
+ * TODO: 这里所有的通信目前都是使用的http, 应该使用 RPC 通信
  */
 export class GoScraperClient {
   private config: GoScraperConfig

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
+import { publishTaskReload } from '@/lib/queue/redis'
 
 // 获取任务列表
 export async function GET() {
@@ -60,6 +61,9 @@ export async function POST(req: NextRequest) {
     }
   })
 
+  // 通知 Scheduler 重载任务
+  await publishTaskReload(task.id)
+
   return NextResponse.json({ task })
 }
 
@@ -93,6 +97,9 @@ export async function PATCH(req: NextRequest) {
     data: updateData
   })
 
+  // 通知 Scheduler 重载任务
+  await publishTaskReload(task.id)
+
   return NextResponse.json({ task })
 }
 
@@ -118,6 +125,9 @@ export async function DELETE(req: NextRequest) {
   }
 
   await prisma.task.delete({ where: { id: taskId } })
+
+  // 通知 Scheduler 移除任务
+  await publishTaskReload(taskId)
 
   return NextResponse.json({ success: true })
 }

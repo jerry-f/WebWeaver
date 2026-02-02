@@ -6,6 +6,7 @@ import { calculateReadingTime } from '../utils/reading-time'
 import { queueArticleForSummary } from '../ai/queue'
 import { getUnifiedFetcher } from './unified-fetcher'
 import { CredentialManager } from '../auth/credential-manager'
+import { addFetchJobs } from '../queue/queues'
 
 // 凭证管理器单例
 const credentialManager = new CredentialManager()
@@ -15,15 +16,21 @@ const credentialManager = new CredentialManager()
  *
  * 这是文章抓取的核心函数，负责：
  * 1. 根据信息源类型（RSS/Scrape）获取文章列表（使用 Go Scraper + 凭证注入）
- * 2. 可选地抓取文章全文内容（使用统一抓取服务，自动注入凭证）
- * 3. 计算阅读时间
- * 4. 将文章存入数据库（自动去重）
- * 5. 将新文章加入 AI 摘要生成队列
+ * 2. 将文章存入数据库（自动去重，contentStatus: 'pending'）
+ * 3. 如果需要全文抓取，将任务推送到 BullMQ 队列
+ * 4. Worker 异步处理全文抓取（带域名限速）
  *
  * @param sourceId - 信息源的唯一标识符
- * @returns 返回新增文章数量和错误信息列表
+ * @param options - 抓取选项
+ * @returns 返回新增文章数量、队列任务数和错误信息列表
  */
-export async function fetchSource(sourceId: string): Promise<{ added: number; errors: string[] }> {
+export async function fetchSource(
+  sourceId: string,
+  options: { useQueue?: boolean } = {}
+): Promise<{ added: number; queued: number; errors: string[] }> {
+  // 默认使用队列模式，可通过环境变量或参数控制
+  const useQueue = options.useQueue ?? (process.env.USE_QUEUE_FETCH !== 'false')
+
   // ========== 第一步：获取信息源配置 ==========
   const source = await prisma.source.findUnique({ where: { id: sourceId } })
   if (!source) throw new Error('Source not found')
@@ -38,23 +45,18 @@ export async function fetchSource(sourceId: string): Promise<{ added: number; er
   const fetchConfig: SourceFetchConfig = config.fetch || {}
 
   // ========== 第三步：根据类型抓取文章列表 ==========
-  // 现在 RSS 和 Scrape 都会自动使用 Go Scraper + 凭证注入
   try {
     const fetchOptions = {
       timeout: fetchConfig.timeout || 30000,
-      skipCredentials: false  // 自动注入凭证
+      skipCredentials: false
     }
 
     switch (source.type.toLowerCase()) {
       case 'rss':
-        // RSS 类型：Go Scraper 获取 XML → rss-parser 解析
-        // 自动注入站点凭证（如果配置了）
         articles = await fetchRSS(source.url, fetchOptions)
         break
 
       case 'scrape':
-        // Scrape 类型：Go Scraper 获取 HTML → jsdom 解析选择器
-        // 自动注入站点凭证（如果配置了）
         if (!config.scrape) {
           throw new Error('Scrape config is required for scrape type sources')
         }
@@ -64,58 +66,30 @@ export async function fetchSource(sourceId: string): Promise<{ added: number; er
       default:
         throw new Error(`Unknown source type: ${source.type}`)
     }
-    
+
     console.log(`[fetchSource] ${source.name}: 获取到 ${articles.length} 篇文章`)
   } catch (e) {
     errors.push(e instanceof Error ? e.message : String(e))
     console.error(`[fetchSource] ${source.name}: 抓取列表失败:`, e)
-    return { added: 0, errors }
+    return { added: 0, queued: 0, errors }
   }
 
-  // ========== 第四步：处理每篇文章并存入数据库 ==========
-  let added = 0
-  const fetcher = getUnifiedFetcher()
-
-  // 检查是否需要全文抓取
+  // ========== 第四步：批量入库 ==========
   const shouldFetchFullText = source.fetchFullText || fetchConfig.fetchFullText
+  const newArticles: { id: string; url: string }[] = []
+  let added = 0
 
   for (const article of articles) {
     try {
-      let content = article.content
-      let textContent: string | undefined
+      // 计算阅读时间（基于 RSS 摘要）
       let readingTime: number | undefined
-      let fetchStrategy: string | undefined
-
-      // ---------- 4.1 全文抓取（可选） ----------
-      if (shouldFetchFullText && article.url) {
-        try {
-          const result = await fetcher.fetch(article.url, {
-            sourceId: source.id,
-            timeout: fetchConfig.timeout || 30000
-          })
-          
-          if (result.success && result.content) {
-            content = result.content
-            textContent = result.textContent
-            fetchStrategy = result.strategy
-            
-            if (result.credentialExpired) {
-              errors.push(`凭证已过期: ${article.url}`)
-            }
-          }
-        } catch (fetchError) {
-          // 全文抓取失败不影响文章入库，记录警告
-          console.warn(`[fetchSource] 全文抓取失败: ${article.url}`, fetchError)
-        }
+      if (article.content) {
+        readingTime = calculateReadingTime(article.content)
       }
 
-      // ---------- 4.2 计算阅读时间 ----------
-      const textForReading = textContent || content
-      if (textForReading) {
-        readingTime = calculateReadingTime(textForReading)
-      }
+      // 入库时 contentStatus 设为 pending（如果需要全文抓取）
+      const contentStatus = shouldFetchFullText ? 'pending' : (article.content ? 'completed' : 'pending')
 
-      // ---------- 4.3 存入数据库（Upsert 去重） ----------
       const result = await prisma.article.upsert({
         where: {
           sourceId_externalId: {
@@ -127,8 +101,7 @@ export async function fetchSource(sourceId: string): Promise<{ added: number; er
           sourceId: source.id,
           externalId: article.externalId,
           title: article.title,
-          content,
-          textContent,
+          content: article.content,
           url: article.url,
           imageUrl: article.imageUrl,
           author: article.author,
@@ -136,15 +109,14 @@ export async function fetchSource(sourceId: string): Promise<{ added: number; er
           readingTime,
           category: source?.category || null,
           summaryStatus: 'pending',
-          contentStatus: content ? 'completed' : 'pending',
-          fetchStrategy
+          contentStatus
         },
         update: {}
       })
 
-      // ---------- 4.4 加入 AI 摘要队列 ----------
-      if (result) {
-        queueArticleForSummary(result.id)
+      // 记录新增的文章（用于后续推送队列）
+      if (result && article.url) {
+        newArticles.push({ id: result.id, url: article.url })
       }
 
       added++
@@ -153,8 +125,60 @@ export async function fetchSource(sourceId: string): Promise<{ added: number; er
     }
   }
 
-  console.log(`[fetchSource] ${source.name}: 新增 ${added} 篇文章`)
-  return { added, errors }
+  // ========== 第五步：推送到队列或同步抓取 ==========
+  let queued = 0
+
+  if (shouldFetchFullText && newArticles.length > 0) {
+    if (useQueue) {
+      // 队列模式：批量推送到 BullMQ，由 FetchWorker 异步处理
+      try {
+        await addFetchJobs(newArticles.map(a => ({
+          articleId: a.id,
+          url: a.url,
+          sourceId: source.id
+        })))
+        queued = newArticles.length
+        console.log(`[fetchSource] ${source.name}: 推送 ${queued} 个全文抓取任务到队列`)
+      } catch (queueError) {
+        console.error(`[fetchSource] ${source.name}: 推送队列失败:`, queueError)
+        errors.push(`推送队列失败: ${queueError instanceof Error ? queueError.message : String(queueError)}`)
+      }
+    } else {
+      // 同步模式：直接抓取（回退方案）
+      console.log(`[fetchSource] ${source.name}: 使用同步模式抓取全文`)
+      const fetcher = getUnifiedFetcher()
+
+      for (const article of newArticles) {
+        try {
+          const result = await fetcher.fetch(article.url, {
+            sourceId: source.id,
+            timeout: fetchConfig.timeout || 30000,
+            strategy: fetchConfig.strategy || 'auto'
+          })
+
+          if (result.success && result.content) {
+            await prisma.article.update({
+              where: { id: article.id },
+              data: {
+                content: result.content,
+                textContent: result.textContent,
+                contentStatus: 'completed',
+                fetchStrategy: result.strategy
+              }
+            })
+
+            // 加入 AI 摘要队列
+            queueArticleForSummary(article.id)
+          }
+        } catch (fetchError) {
+          console.warn(`[fetchSource] 全文抓取失败: ${article.url}`, fetchError)
+        }
+      }
+    }
+  }
+
+  console.log(`[fetchSource] ${source.name}: 新增 ${added} 篇文章, 队列 ${queued} 个任务`)
+  return { added, queued, errors }
 }
 
 /**
@@ -165,7 +189,7 @@ export async function fetchSource(sourceId: string): Promise<{ added: number; er
  *
  * @returns 返回每个信息源的抓取结果数组
  */
-export async function fetchAllSources(): Promise<{ sourceId: string; sourceName: string; added: number; errors: string[] }[]> {
+export async function fetchAllSources(): Promise<{ sourceId: string; sourceName: string; added: number; queued: number; errors: string[] }[]> {
   const sources = await prisma.source.findMany({ where: { enabled: true } })
   const results = []
 
@@ -181,20 +205,22 @@ export async function fetchAllSources(): Promise<{ sourceId: string; sourceName:
         sourceId: source.id,
         sourceName: source.name,
         added: 0,
+        queued: 0,
         errors: [error instanceof Error ? error.message : String(error)]
       })
     }
   }
 
   const totalAdded = results.reduce((sum, r) => sum + r.added, 0)
-  console.log(`[fetchAllSources] 完成，共新增 ${totalAdded} 篇文章`)
+  const totalQueued = results.reduce((sum, r) => sum + r.queued, 0)
+  console.log(`[fetchAllSources] 完成，共新增 ${totalAdded} 篇文章, 队列 ${totalQueued} 个任务`)
 
   return results
 }
 
 /**
  * 检查凭证状态
- * 
+ *
  * @returns 凭证状态报告
  */
 export function getCredentialStatus(): { domain: string; enabled: boolean; hasCredential: boolean }[] {

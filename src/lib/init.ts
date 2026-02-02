@@ -29,12 +29,22 @@ export async function initApp(): Promise<void> {
   console.log('[Init] 初始化应用服务...')
 
   try {
-    // 启动 Cron 调度器
-    await initScheduler()
+    // 启动 Cron 调度器（默认启用，可通过环境变量禁用）
+    // 禁用场景：分离部署时，调度器单独运行
+    if (process.env.DISABLE_SCHEDULER !== 'true') {
+      await initScheduler()
+      console.log('[Init] Cron 调度器已启动')
+    } else {
+      console.log('[Init] 调度器已禁用（DISABLE_SCHEDULER=true）')
+    }
 
-    // 启动 Workers（可选，根据环境变量控制）
-    if (process.env.ENABLE_WORKERS === 'true') {
+    // 启动 Workers（默认启用，可通过环境变量禁用）
+    // 禁用场景：分离部署时，Workers 单独运行
+    if (process.env.DISABLE_WORKERS !== 'true') {
       startAllWorkers({ concurrency: 5 })
+      console.log('[Init] BullMQ Workers 已启动')
+    } else {
+      console.log('[Init] Workers 已禁用（DISABLE_WORKERS=true）')
     }
 
     initialized = true
