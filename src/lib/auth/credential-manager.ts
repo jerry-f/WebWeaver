@@ -185,6 +185,154 @@ export class CredentialManager {
       return ''
     }
   }
+
+  /**
+   * 添加或更新凭证
+   * 
+   * @param domain - 主域名
+   * @param cookie - Cookie 字符串
+   * @param options - 可选配置
+   */
+  addCredential(
+    domain: string,
+    cookie: string,
+    options: {
+      domains?: string[]
+      note?: string
+    } = {}
+  ): void {
+    // 规范化域名
+    const mainDomain = domain.replace(/^www\./, '')
+    
+    // 确保目录存在
+    const credentialsDir = path.join(path.dirname(this.configPath), 'credentials')
+    if (!fs.existsSync(credentialsDir)) {
+      fs.mkdirSync(credentialsDir, { recursive: true })
+    }
+
+    // 保存 Cookie 文件
+    const cookieFileName = `${mainDomain.replace(/\./g, '-')}-cookie.txt`
+    const cookiePath = path.join(credentialsDir, cookieFileName)
+    fs.writeFileSync(cookiePath, cookie.trim())
+
+    // 更新配置
+    this.config.credentials[mainDomain] = {
+      enabled: true,
+      authType: 'cookie',
+      cookieFile: `credentials/${cookieFileName}`,
+      domains: options.domains || [mainDomain, `www.${mainDomain}`],
+      note: options.note,
+      lastUpdated: new Date().toISOString()
+    }
+
+    // 保存配置文件
+    this.saveConfig()
+
+    // 清除缓存
+    this.cookieCache.clear()
+  }
+
+  /**
+   * 删除凭证
+   * 
+   * @param domain - 域名
+   * @returns 是否成功删除
+   */
+  removeCredential(domain: string): boolean {
+    const mainDomain = domain.replace(/^www\./, '')
+    
+    const config = this.config.credentials[mainDomain]
+    if (!config) {
+      return false
+    }
+
+    // 删除 Cookie 文件
+    if (config.cookieFile) {
+      const cookiePath = path.join(path.dirname(this.configPath), config.cookieFile)
+      try {
+        if (fs.existsSync(cookiePath)) {
+          fs.unlinkSync(cookiePath)
+        }
+      } catch (error) {
+        console.warn(`[CredentialManager] 删除 Cookie 文件失败: ${cookiePath}`)
+      }
+    }
+
+    // 从配置中删除
+    delete this.config.credentials[mainDomain]
+
+    // 保存配置文件
+    this.saveConfig()
+
+    // 清除缓存
+    this.cookieCache.delete(domain)
+    this.cookieCache.delete(mainDomain)
+
+    return true
+  }
+
+  /**
+   * 更新凭证 Cookie
+   * 
+   * @param domain - 域名
+   * @param cookie - 新的 Cookie 字符串
+   */
+  updateCookie(domain: string, cookie: string): boolean {
+    const mainDomain = domain.replace(/^www\./, '')
+    const config = this.config.credentials[mainDomain]
+    
+    if (!config) {
+      return false
+    }
+
+    // 更新 Cookie 文件
+    if (config.cookieFile) {
+      const cookiePath = path.join(path.dirname(this.configPath), config.cookieFile)
+      fs.writeFileSync(cookiePath, cookie.trim())
+    } else if (config.cookie) {
+      config.cookie = cookie.trim()
+    }
+
+    // 更新时间戳
+    config.lastUpdated = new Date().toISOString()
+    this.saveConfig()
+
+    // 清除缓存
+    this.cookieCache.delete(domain)
+    this.cookieCache.delete(mainDomain)
+
+    return true
+  }
+
+  /**
+   * 获取所有凭证配置（用于前端展示）
+   */
+  getAllCredentials(): Array<{
+    domain: string
+    enabled: boolean
+    authType: string
+    domains: string[]
+    cookieLength: number
+    lastUpdated?: string
+    note?: string
+  }> {
+    return Object.entries(this.config.credentials).map(([domain, config]) => ({
+      domain,
+      enabled: config.enabled,
+      authType: config.authType,
+      domains: config.domains,
+      cookieLength: this.getCookieForDomain(domain)?.length || 0,
+      lastUpdated: config.lastUpdated,
+      note: config.note
+    }))
+  }
+
+  /**
+   * 保存配置文件
+   */
+  private saveConfig(): void {
+    fs.writeFileSync(this.configPath, JSON.stringify(this.config, null, 2))
+  }
 }
 
 // 单例

@@ -18,6 +18,7 @@ import {
   BookOpen,
   PanelLeftClose,
   PanelLeft,
+  Key,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -37,6 +38,7 @@ const adminNavigation = [
   { name: "后台管理", href: "/admin", icon: Shield },
   { name: "用户管理", href: "/admin/users", icon: Users },
   { name: "任务管理", href: "/admin/tasks", icon: ListTodo },
+  { name: "凭证管理", href: "/admin/credentials", icon: Key },
 ];
 
 export default function DashboardLayout({
