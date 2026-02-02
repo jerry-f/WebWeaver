@@ -46,6 +46,20 @@ export interface GoScraperResponse {
 }
 
 /**
+ * 原始抓取响应（不经过 Readability 处理）
+ */
+export interface GoRawResponse {
+  url: string
+  finalUrl: string
+  body: string           // 原始 HTML/XML 内容
+  contentType?: string   // Content-Type
+  statusCode: number     // HTTP 状态码
+  strategy: string
+  duration: number
+  error?: string
+}
+
+/**
  * 批量抓取响应
  */
 export interface GoBatchResponse {
@@ -118,6 +132,38 @@ export class GoScraperClient {
       return data
     } catch (error) {
       console.error('Go scraper fetch error:', error)
+      return null
+    }
+  }
+
+  /**
+   * 原始抓取（不经过 Readability 处理）
+   * 用于 RSS/Scrape 列表页抓取，只需要原始 HTML/XML
+   */
+  async fetchRaw(request: GoScraperRequest): Promise<GoRawResponse | null> {
+    try {
+      const response = await fetch(`${this.config.endpoint}/fetch-raw`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          url: request.url,
+          referer: request.referer,
+          headers: request.headers,
+          timeout: request.timeout || this.config.timeout
+        }),
+        signal: AbortSignal.timeout(request.timeout || this.config.timeout || 30000)
+      })
+
+      if (!response.ok) {
+        console.error('Go scraper fetchRaw failed:', response.status, response.statusText)
+        return null
+      }
+
+      return await response.json() as GoRawResponse
+    } catch (error) {
+      console.error('Go scraper fetchRaw error:', error)
       return null
     }
   }

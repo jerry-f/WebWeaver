@@ -80,6 +80,8 @@ func (c *StandardClient) Fetch(ctx context.Context, url string) *FetchResult {
 	defer resp.Body.Close()
 
 	result.FinalURL = resp.Request.URL.String()
+	result.StatusCode = resp.StatusCode
+	result.ContentType = resp.Header.Get("Content-Type")
 
 	if resp.StatusCode != http.StatusOK {
 		result.Error = &HTTPError{StatusCode: resp.StatusCode}
@@ -132,6 +134,8 @@ func (c *StandardClient) FetchWithHeaders(ctx context.Context, url string, heade
 	defer resp.Body.Close()
 
 	result.FinalURL = resp.Request.URL.String()
+	result.StatusCode = resp.StatusCode
+	result.ContentType = resp.Header.Get("Content-Type")
 
 	if resp.StatusCode != http.StatusOK {
 		result.Error = &HTTPError{StatusCode: resp.StatusCode}

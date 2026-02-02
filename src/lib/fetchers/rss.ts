@@ -1,19 +1,13 @@
 import Parser from 'rss-parser'
+import { fetchRaw } from './unified-fetcher'
 
 /**
  * RSS 解析器实例
  *
  * 使用 rss-parser 库解析 RSS/Atom 订阅源
- * 配置说明：
- * - timeout: 请求超时时间（10秒）
- * - User-Agent: 自定义请求头，避免被某些网站拦截
+ * 注意：不再使用 parser.parseURL()，而是先用 Go Scraper 获取原始 XML
  */
-const parser = new Parser({
-  timeout: 10000,
-  headers: {
-    'User-Agent': 'NewsFlow/1.0'
-  }
-})
+const parser = new Parser()
 
 /**
  * 抓取到的文章数据结构
@@ -31,22 +25,54 @@ export interface FetchedArticle {
 }
 
 /**
+ * RSS 抓取选项
+ */
+export interface RSSFetchOptions {
+  /** 自定义请求头（包括 Cookie） */
+  headers?: Record<string, string>
+  /** 超时时间（毫秒） */
+  timeout?: number
+  /** 是否跳过凭证自动注入 */
+  skipCredentials?: boolean
+}
+
+/**
  * 抓取 RSS/Atom 订阅源
  *
- * 解析给定 URL 的 RSS 或 Atom 源，提取所有文章条目
+ * 改进：使用 Go Scraper 获取原始 XML（带 TLS 指纹伪造），然后本地解析
+ * 这样可以绕过某些网站的反爬虫检测
+ *
  * 支持的格式：RSS 0.9x, RSS 1.0, RSS 2.0, Atom 0.3, Atom 1.0
  *
  * @param url - RSS 订阅源的 URL 地址
+ * @param options - 抓取选项（headers、timeout 等）
  * @returns 返回解析后的文章数组
  *
  * @example
+ * // 基本用法
  * const articles = await fetchRSS('https://example.com/feed.xml')
+ *
+ * // 带自定义 Cookie
+ * const articles = await fetchRSS('https://example.com/feed.xml', {
+ *   headers: { 'Cookie': 'session=xxx' }
+ * })
  */
-export async function fetchRSS(url: string): Promise<FetchedArticle[]> {
-  // 解析 RSS 源，返回包含 feed 元信息和 items 数组的对象
-  const feed = await parser.parseURL(url)
+export async function fetchRSS(url: string, options: RSSFetchOptions = {}): Promise<FetchedArticle[]> {
+  // 第一步：使用统一抓取服务获取原始 XML
+  // 这会自动：1) 使用 Go Scraper 的 TLS 指纹伪造 2) 注入站点凭证（如果有）
+  const rawResult = await fetchRaw(url, {
+    timeout: options.timeout || 15000,
+    skipCredentials: options.skipCredentials
+  })
 
-  // 将每个 RSS item 转换为统一的 FetchedArticle 格式
+  if (!rawResult.success || !rawResult.body) {
+    throw new Error(`Failed to fetch RSS: ${rawResult.error || 'Empty response'}`)
+  }
+
+  // 第二步：使用 rss-parser 解析 XML 字符串
+  const feed = await parser.parseString(rawResult.body)
+
+  // 第三步：将每个 RSS item 转换为统一的 FetchedArticle 格式
   return feed.items.map(item => ({
     // externalId 优先级：guid > link > title
     // guid 是 RSS 规范中用于唯一标识文章的字段

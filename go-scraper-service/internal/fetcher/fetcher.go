@@ -9,12 +9,14 @@ import (
 
 // FetchResult 抓取结果
 type FetchResult struct {
-	URL      string
-	FinalURL string
-	HTML     string
-	Strategy string // cycletls, standard, browserless
-	Duration time.Duration
-	Error    error
+	URL         string
+	FinalURL    string
+	HTML        string
+	ContentType string // 响应的 Content-Type
+	StatusCode  int    // HTTP 状态码
+	Strategy    string // cycletls, standard, browserless
+	Duration    time.Duration
+	Error       error
 }
 
 // HTTPError HTTP 错误

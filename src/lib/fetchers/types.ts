@@ -151,8 +151,67 @@ export interface SourceConfig {
   scrape?: ScrapeConfig
 
   /**
+   * 抓取配置
+   * 控制抓取行为的选项
+   */
+  fetch?: SourceFetchConfig
+
+  /**
    * 其他扩展配置
    * 允许添加未来可能需要的自定义配置项
    */
   [key: string]: unknown
+}
+
+/**
+ * 信息源抓取配置
+ *
+ * 控制信息源的抓取行为
+ */
+export interface SourceFetchConfig {
+  /**
+   * 抓取策略
+   * - auto: 自动选择（优先 Go Scraper）
+   * - go: 强制使用 Go Scraper
+   * - browserless: 强制使用浏览器渲染
+   * - local: 强制使用本地抓取
+   */
+  strategy?: 'auto' | 'go' | 'browserless' | 'local'
+
+  /**
+   * 是否启用全文抓取
+   * 如果为 true，会访问每篇文章的原始 URL 获取完整正文
+   */
+  fetchFullText?: boolean
+
+  /**
+   * 超时时间（毫秒）
+   * 默认 30000
+   */
+  timeout?: number
+
+  /**
+   * 域名调度规则
+   */
+  scheduling?: {
+    /**
+     * 最大并发请求数
+     */
+    maxConcurrent?: number
+
+    /**
+     * 每秒最大请求数
+     */
+    rateLimit?: number
+
+    /**
+     * 请求失败后的重试次数
+     */
+    retryCount?: number
+
+    /**
+     * 请求间隔（毫秒）
+     */
+    delayMs?: number
+  }
 }

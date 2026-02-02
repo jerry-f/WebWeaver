@@ -8,7 +8,7 @@
  * - 凭证过期检测
  */
 
-import { GoScraperClient, type GoScraperResponse } from './clients/go-scraper'
+import { GoScraperClient, type GoScraperResponse, type GoRawResponse } from './clients/go-scraper'
 import { CredentialManager } from '../auth/credential-manager'
 import { fetchFullText, type FullTextResult } from './fulltext'
 
@@ -58,6 +58,30 @@ export interface UnifiedFetchResult {
   authenticated: boolean
   /** 凭证是否过期 */
   credentialExpired?: boolean
+  /** 错误信息 */
+  error?: string
+}
+
+/**
+ * 原始抓取结果（不经过 Readability 处理）
+ */
+export interface RawFetchResult {
+  /** 是否成功 */
+  success: boolean
+  /** 最终 URL（可能重定向） */
+  finalUrl?: string
+  /** 原始内容（HTML/XML） */
+  body: string
+  /** Content-Type */
+  contentType?: string
+  /** HTTP 状态码 */
+  statusCode: number
+  /** 使用的策略 */
+  strategy: string
+  /** 耗时（毫秒） */
+  duration: number
+  /** 是否使用了认证 */
+  authenticated: boolean
   /** 错误信息 */
   error?: string
 }
@@ -253,6 +277,92 @@ export class UnifiedFetcher {
   }
 
   /**
+   * 原始抓取（不经过 Readability 处理）
+   * 用于 RSS/Scrape 列表页抓取，只需要原始 HTML/XML
+   */
+  async fetchRaw(url: string, options: UnifiedFetchOptions = {}): Promise<RawFetchResult> {
+    const start = Date.now()
+
+    // 准备请求头（包含 Cookie）
+    const headers: Record<string, string> = {}
+    let authenticated = false
+
+    if (!options.skipCredentials) {
+      const cookie = this.credentialManager.getCookieForUrl(url)
+      if (cookie) {
+        headers['Cookie'] = cookie
+        authenticated = true
+      }
+    }
+
+    // 优先使用 Go Scraper
+    if (await this.isGoScraperAvailable()) {
+      try {
+        const response = await this.goClient.fetchRaw({
+          url,
+          headers: Object.keys(headers).length > 0 ? headers : undefined,
+          referer: options.referer,
+          timeout: options.timeout
+        })
+
+        if (response && !response.error) {
+          return {
+            success: true,
+            finalUrl: response.finalUrl,
+            body: response.body,
+            contentType: response.contentType,
+            statusCode: response.statusCode,
+            strategy: response.strategy,
+            duration: Date.now() - start,
+            authenticated
+          }
+        }
+
+        // Go Scraper 失败，回退到本地
+        console.log(`[UnifiedFetcher] Go Scraper fetchRaw 失败，回退到本地: ${url}`)
+      } catch (error) {
+        console.error('[UnifiedFetcher] Go Scraper fetchRaw error:', error)
+      }
+    }
+
+    // 本地 fetch 回退（不带 TLS 指纹伪造）
+    try {
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'NewsFlow/1.0',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          ...headers
+        },
+        signal: AbortSignal.timeout(options.timeout || 30000)
+      })
+
+      const body = await response.text()
+
+      return {
+        success: response.ok,
+        finalUrl: response.url,
+        body,
+        contentType: response.headers.get('content-type') || undefined,
+        statusCode: response.status,
+        strategy: 'local',
+        duration: Date.now() - start,
+        authenticated,
+        error: response.ok ? undefined : `HTTP ${response.status}`
+      }
+    } catch (error) {
+      return {
+        success: false,
+        body: '',
+        statusCode: 0,
+        strategy: 'local',
+        duration: Date.now() - start,
+        authenticated,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  }
+
+  /**
    * 批量抓取
    */
   async fetchBatch(
@@ -353,4 +463,15 @@ export async function fetchArticles(
   options?: UnifiedFetchOptions
 ): Promise<UnifiedFetchResult[]> {
   return getUnifiedFetcher().fetchBatch(urls, options)
+}
+
+/**
+ * 原始抓取（快捷方法）
+ * 用于 RSS/Scrape 列表页抓取，只需要原始 HTML/XML
+ */
+export async function fetchRaw(
+  url: string,
+  options?: UnifiedFetchOptions
+): Promise<RawFetchResult> {
+  return getUnifiedFetcher().fetchRaw(url, options)
 }

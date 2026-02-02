@@ -1,38 +1,64 @@
 import { JSDOM } from 'jsdom'
 import { FetchedArticle, ScrapeConfig } from './types'
+import { fetchRaw } from './unified-fetcher'
+
+/**
+ * Scrape 抓取选项
+ */
+export interface ScrapeFetchOptions {
+  /** 自定义请求头（包括 Cookie） */
+  headers?: Record<string, string>
+  /** 超时时间（毫秒） */
+  timeout?: number
+  /** 是否跳过凭证自动注入 */
+  skipCredentials?: boolean
+}
 
 /**
  * 使用 CSS 选择器抓取网页文章列表
  *
- * 适用于没有 RSS 订阅源的网站，通过配置 CSS 选择器从 HTML 页面中提取文章列表
- * 使用 jsdom 库在 Node.js 环境中模拟浏览器 DOM 操作
+ * 改进：使用 Go Scraper 获取原始 HTML（带 TLS 指纹伪造），然后本地解析选择器
+ * 这样可以绕过某些网站的反爬虫检测，同时支持站点凭证注入
  *
  * @param url - 要抓取的网页 URL（通常是文章列表页）
  * @param config - 抓取配置，包含各字段的 CSS 选择器
+ * @param options - 抓取选项（headers、timeout 等）
  * @returns 返回解析后的文章数组
  *
  * @example
+ * // 基本用法
  * const articles = await fetchScrape('https://example.com/news', {
- *   listSelector: '.article-item',      // 文章列表容器选择器
- *   titleSelector: '.title',            // 标题选择器
- *   linkSelector: 'a.read-more',        // 链接选择器
- *   imageSelector: 'img.cover',         // 封面图选择器（可选）
- *   authorSelector: '.author-name',     // 作者选择器（可选）
- *   dateSelector: '.publish-date'       // 日期选择器（可选）
+ *   listSelector: '.article-item',
+ *   titleSelector: '.title',
+ *   linkSelector: 'a.read-more',
+ *   imageSelector: 'img.cover',
+ *   authorSelector: '.author-name',
+ *   dateSelector: '.publish-date'
  * })
+ *
+ * // 带凭证（自动注入）
+ * const articles = await fetchScrape('https://zhihu.com/hot', config)
  */
-export async function fetchScrape(url: string, config: ScrapeConfig): Promise<FetchedArticle[]> {
-  // ========== 第一步：获取网页 HTML ==========
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`Failed to fetch ${url}: ${response.status}`)
+export async function fetchScrape(
+  url: string,
+  config: ScrapeConfig,
+  options: ScrapeFetchOptions = {}
+): Promise<FetchedArticle[]> {
+  // ========== 第一步：使用统一抓取服务获取原始 HTML ==========
+  // 这会自动：1) 使用 Go Scraper 的 TLS 指纹伪造 2) 注入站点凭证（如果有）
+  const rawResult = await fetchRaw(url, {
+    timeout: options.timeout || 30000,
+    skipCredentials: options.skipCredentials
+  })
+
+  if (!rawResult.success || !rawResult.body) {
+    throw new Error(`Failed to fetch ${url}: ${rawResult.error || 'Empty response'}`)
   }
 
   // ========== 第二步：解析 HTML 为 DOM ==========
   // 使用 jsdom 创建虚拟 DOM 环境
   // 传入 url 参数使相对链接能够正确解析为绝对 URL
-  const html = await response.text()
-  const dom = new JSDOM(html, { url })
+  const dom = new JSDOM(rawResult.body, { url: rawResult.finalUrl || url })
   const document = dom.window.document
 
   // ========== 第三步：查找所有文章条目 ==========
@@ -70,7 +96,15 @@ export async function fetchScrape(url: string, config: ScrapeConfig): Promise<Fe
         url: articleUrl,
       }
 
-      // ---------- 4.2 提取可选字段：封面图 ----------
+      // ---------- 4.2 提取可选字段：内容/摘要 ----------
+      if (config.contentSelector) {
+        const contentEl = item.querySelector(config.contentSelector)
+        if (contentEl?.textContent) {
+          article.content = contentEl.textContent.trim()
+        }
+      }
+
+      // ---------- 4.3 提取可选字段：封面图 ----------
       if (config.imageSelector) {
         const imgEl = item.querySelector(config.imageSelector) as HTMLImageElement | null
         if (imgEl?.src) {
@@ -78,7 +112,7 @@ export async function fetchScrape(url: string, config: ScrapeConfig): Promise<Fe
         }
       }
 
-      // ---------- 4.3 提取可选字段：作者 ----------
+      // ---------- 4.4 提取可选字段：作者 ----------
       if (config.authorSelector) {
         const authorEl = item.querySelector(config.authorSelector)
         if (authorEl?.textContent) {
@@ -86,7 +120,7 @@ export async function fetchScrape(url: string, config: ScrapeConfig): Promise<Fe
         }
       }
 
-      // ---------- 4.4 提取可选字段：发布日期 ----------
+      // ---------- 4.5 提取可选字段：发布日期 ----------
       if (config.dateSelector) {
         const dateEl = item.querySelector(config.dateSelector)
         if (dateEl?.textContent) {

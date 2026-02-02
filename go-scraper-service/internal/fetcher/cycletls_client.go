@@ -63,6 +63,12 @@ func (c *CycleTLSClient) Fetch(ctx context.Context, url string) *FetchResult {
 	if result.FinalURL == "" {
 		result.FinalURL = url
 	}
+	result.StatusCode = resp.Status
+
+	// 提取 Content-Type
+	if ct, ok := resp.Headers["Content-Type"]; ok {
+		result.ContentType = ct
+	}
 
 	if resp.Status != 200 {
 		result.Error = &HTTPError{StatusCode: resp.Status}
@@ -103,6 +109,11 @@ func (c *CycleTLSClient) FetchWithReferer(ctx context.Context, url, referer stri
 	result.FinalURL = resp.FinalUrl
 	if result.FinalURL == "" {
 		result.FinalURL = url
+	}
+	result.StatusCode = resp.Status
+
+	if ct, ok := resp.Headers["Content-Type"]; ok {
+		result.ContentType = ct
 	}
 
 	if resp.Status != 200 {
@@ -153,6 +164,11 @@ func (c *CycleTLSClient) FetchWithHeaders(ctx context.Context, url string, custo
 	result.FinalURL = resp.FinalUrl
 	if result.FinalURL == "" {
 		result.FinalURL = url
+	}
+	result.StatusCode = resp.Status
+
+	if ct, ok := resp.Headers["Content-Type"]; ok {
+		result.ContentType = ct
 	}
 
 	if resp.Status != 200 {
