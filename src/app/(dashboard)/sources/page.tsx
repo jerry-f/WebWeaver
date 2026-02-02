@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { prisma } from "@/lib/prisma";
@@ -68,52 +69,59 @@ export default async function SourcesPage() {
           {sources.map((source) => {
             const TypeIcon = typeIcons[source.type as keyof typeof typeIcons] || Rss;
             return (
-              <Card key={source.id} className="relative">
+              <Card key={source.id} className="relative group hover:shadow-md transition-shadow">
                 {!source.enabled && (
                   <div className="absolute inset-0 bg-white/50 dark:bg-black/50 rounded-xl z-10 flex items-center justify-center">
                     <Badge variant="secondary">已禁用</Badge>
                   </div>
                 )}
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
-                        <TypeIcon className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-base">{source.name}</CardTitle>
-                        <Badge
-                          variant="secondary"
-                          className={`mt-1 ${categoryColors.news}`}
-                        >
-                          {source.type}
-                        </Badge>
+                <Link href={`/articles?sources=${source.id}`} className="block">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center">
+                          <TypeIcon className="w-5 h-5 text-white" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-base group-hover:text-primary transition-colors">{source.name}</CardTitle>
+                          <Badge
+                            variant="secondary"
+                            className={`mt-1 ${categoryColors.news}`}
+                          >
+                            {source.type}
+                          </Badge>
+                        </div>
                       </div>
                     </div>
-                    <SourceActionsMenu
-                      source={{
-                        id: source.id,
-                        name: source.name,
-                        url: source.url,
-                        type: source.type,
-                        category: source.category ?? "news",
-                        enabled: source.enabled,
-                        fetchFullText: source.fetchFullText,
-                      }}
-                    />
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <p className="text-sm text-muted-foreground line-clamp-2">
-                    {source.url}
-                  </p>
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">
-                      {source._count.articles} 篇文章
-                    </span>
-                    <SourceFetchButton sourceId={source.id} sourceName={source.name} />
-                  </div>
-                </CardContent>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <p className="text-sm text-muted-foreground line-clamp-2">
+                      {source.url}
+                    </p>
+                    <div className="flex items-center text-sm">
+                      <span className="text-muted-foreground">
+                        {source._count.articles} 篇文章
+                      </span>
+                    </div>
+                  </CardContent>
+                </Link>
+                {/* 操作按钮区域 - 放在 Link 外面 */}
+                <div className="absolute top-3 right-3 z-20">
+                  <SourceActionsMenu
+                    source={{
+                      id: source.id,
+                      name: source.name,
+                      url: source.url,
+                      type: source.type,
+                      category: source.category ?? "news",
+                      enabled: source.enabled,
+                      fetchFullText: source.fetchFullText,
+                    }}
+                  />
+                </div>
+                <div className="absolute bottom-4 right-4 z-20">
+                  <SourceFetchButton sourceId={source.id} sourceName={source.name} />
+                </div>
               </Card>
             );
           })}

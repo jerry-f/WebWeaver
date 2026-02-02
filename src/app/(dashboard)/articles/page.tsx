@@ -14,7 +14,12 @@ import {
   Loader2,
   X,
   Filter,
-  ChevronDown
+  ChevronDown,
+  RefreshCw,
+  Trash2,
+  CheckSquare,
+  Square,
+  ArrowLeft
 } from 'lucide-react'
 import ArticleListItem, { ArticleItem } from '@/components/article-list-item'
 
@@ -58,6 +63,10 @@ function ArticlesContent() {
   const [loading, setLoading] = useState(true)
   const [focusIndex, setFocusIndex] = useState(0)
 
+  // 多选状态
+  const [selectedArticleIds, setSelectedArticleIds] = useState<Set<string>>(new Set())
+  const [batchLoading, setBatchLoading] = useState(false)
+
   // 从 URL 参数初始化筛选状态
   const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'starred'>(() => {
     const status = searchParams.get('status')
@@ -79,6 +88,12 @@ function ArticlesContent() {
   })
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
+
+  // 判断是否为单一信息源模式
+  const isSingleSourceMode = selectedSourceIds.length === 1
+  const currentSourceName = isSingleSourceMode
+    ? sources.find(s => s.id === selectedSourceIds[0])?.name
+    : null
 
   // 筛选面板展开状态
   const [filterExpanded, setFilterExpanded] = useState(false)
@@ -153,9 +168,62 @@ function ArticlesContent() {
   const clearFilters = useCallback(() => {
     setSelectedSourceIds([])
     setSelectedCategories([])
+    setSelectedArticleIds(new Set())
     setPage(1)
     updateURL({ sources: [], categories: [], page: 1 })
   }, [updateURL])
+
+  // 多选操作
+  const toggleSelectArticle = useCallback((articleId: string) => {
+    setSelectedArticleIds(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(articleId)) {
+        newSet.delete(articleId)
+      } else {
+        newSet.add(articleId)
+      }
+      return newSet
+    })
+  }, [])
+
+  const selectAllArticles = useCallback(() => {
+    setSelectedArticleIds(new Set(articles.map(a => a.id)))
+  }, [articles])
+
+  const clearSelection = useCallback(() => {
+    setSelectedArticleIds(new Set())
+  }, [])
+
+  // 批量操作
+  const executeBatchAction = useCallback(async (action: 'refresh' | 'delete' | 'markRead' | 'markUnread') => {
+    if (selectedArticleIds.size === 0) return
+
+    setBatchLoading(true)
+    try {
+      const res = await fetch('/api/articles/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action,
+          articleIds: Array.from(selectedArticleIds)
+        })
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || '操作失败')
+      }
+
+      // 刷新列表
+      await fetchArticles()
+      setSelectedArticleIds(new Set())
+    } catch (e) {
+      console.error('批量操作失败:', e)
+      alert(e instanceof Error ? e.message : '操作失败')
+    } finally {
+      setBatchLoading(false)
+    }
+  }, [selectedArticleIds, fetchArticles])
 
   // 切换收藏
   const toggleStarred = useCallback(async (article: Article, e: React.MouseEvent) => {
@@ -284,11 +352,60 @@ function ArticlesContent() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)] -m-4 lg:-m-6 overflow-hidden bg-background">
+      {/* 单一信息源模式的标题栏 */}
+      {isSingleSourceMode && (
+        <div className="flex-shrink-0 border-b border-border/40 bg-card/50 backdrop-blur-sm">
+          <div className="max-w-4xl mx-auto px-4 py-3 flex items-center gap-3">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setSelectedSourceIds([])
+                setSelectedArticleIds(new Set())
+                updateURL({ sources: [] })
+              }}
+              className="h-8 px-2"
+            >
+              <ArrowLeft className="w-4 h-4 mr-1" />
+              返回
+            </Button>
+            <div className="flex-1">
+              <h1 className="text-lg font-semibold">{currentSourceName}</h1>
+              <p className="text-xs text-muted-foreground">{total} 篇文章</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 紧凑的顶部工具栏 */}
       <div className="flex-shrink-0 border-b border-border/40 bg-card/50 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-4 py-2.5">
           {/* 第一行：搜索 + 状态筛选 */}
           <div className="flex items-center gap-3">
+            {/* 单一信息源模式下显示全选按钮 */}
+            {isSingleSourceMode && articles.length > 0 && (
+              <>
+                <button
+                  onClick={() => {
+                    if (selectedArticleIds.size === articles.length) {
+                      clearSelection()
+                    } else {
+                      selectAllArticles()
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-md hover:bg-muted/50 transition-all"
+                >
+                  {selectedArticleIds.size === articles.length ? (
+                    <CheckSquare className="w-3.5 h-3.5" />
+                  ) : (
+                    <Square className="w-3.5 h-3.5" />
+                  )}
+                  全选
+                </button>
+                <div className="w-px h-5 bg-border/50" />
+              </>
+            )}
+
             {/* 搜索框 */}
             <div className="relative flex-1 max-w-sm">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground/60" />
@@ -554,9 +671,12 @@ function ArticlesContent() {
                 key={article.id}
                 article={article}
                 isFocused={index === focusIndex}
+                showCheckbox={isSingleSourceMode}
+                isSelected={selectedArticleIds.has(article.id)}
                 onClick={() => selectArticle(article, index)}
                 onToggleStarred={(e) => toggleStarred(article, e)}
                 onToggleRead={(e) => toggleRead(article, e)}
+                onToggleSelect={() => toggleSelectArticle(article.id)}
               />
             ))
           )}
@@ -606,6 +726,60 @@ function ArticlesContent() {
           )}
         </div>
       </div>
+
+      {/* 底部浮动批量操作工具栏 */}
+      {selectedArticleIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+          <div className="flex items-center gap-3 px-4 py-2.5 bg-card border border-border rounded-full shadow-lg">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={clearSelection}
+                className="p-1 hover:bg-muted rounded-full"
+              >
+                <X className="w-4 h-4" />
+              </button>
+              <span className="text-sm font-medium">
+                已选择 {selectedArticleIds.size} 篇
+              </span>
+            </div>
+
+            <div className="w-px h-5 bg-border" />
+
+            <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => executeBatchAction('refresh')}
+                disabled={batchLoading}
+                className="h-8 px-3 rounded-full"
+              >
+                <RefreshCw className={cn("w-4 h-4 mr-1.5", batchLoading && "animate-spin")} />
+                批量抓取
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => executeBatchAction('markRead')}
+                disabled={batchLoading}
+                className="h-8 px-3 rounded-full"
+              >
+                <BookOpen className="w-4 h-4 mr-1.5" />
+                标记已读
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => executeBatchAction('delete')}
+                disabled={batchLoading}
+                className="h-8 px-3 rounded-full text-red-600 hover:text-red-700 hover:bg-red-50"
+              >
+                <Trash2 className="w-4 h-4 mr-1.5" />
+                删除
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

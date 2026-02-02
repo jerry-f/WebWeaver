@@ -28,9 +28,12 @@ interface ArticleListItemProps {
   isFocused?: boolean
   compact?: boolean  // 紧凑模式（用于侧边栏）
   showActions?: boolean  // 是否显示操作按钮
+  showCheckbox?: boolean  // 是否显示多选框
+  isSelected?: boolean  // 是否被选中
   onClick?: () => void
   onToggleStarred?: (e: React.MouseEvent) => void
   onToggleRead?: (e: React.MouseEvent) => void
+  onToggleSelect?: (e: React.MouseEvent) => void
 }
 
 export default function ArticleListItem({
@@ -39,9 +42,12 @@ export default function ArticleListItem({
   isFocused = false,
   compact = false,
   showActions = true,
+  showCheckbox = false,
+  isSelected = false,
   onClick,
   onToggleStarred,
   onToggleRead,
+  onToggleSelect,
 }: ArticleListItemProps) {
   return (
     <div
@@ -51,11 +57,27 @@ export default function ArticleListItem({
         compact ? "px-3 py-2.5 border-border/30" : "px-4 py-3.5 border-border/30",
         article.read && "opacity-55",
         isActive && "bg-primary/10 border-l-2 border-l-primary",
-        isFocused && !isActive && "bg-primary/5 border-l-2 border-l-primary -ml-[2px] pl-[calc(1rem+2px)]",
+        isFocused && !isActive && "bg-primary/5 border-l-2 border-l-primary -ml-0.5 pl-4.5",
+        isSelected && "bg-primary/10",
         !isActive && !isFocused && "hover:bg-muted/30"
       )}
     >
       <div className="flex gap-3">
+        {/* 多选框 */}
+        {showCheckbox && (
+          <div className="flex items-center shrink-0">
+            <input
+              type="checkbox"
+              checked={isSelected}
+              onChange={(e) => {
+                e.stopPropagation()
+                onToggleSelect?.(e as unknown as React.MouseEvent)
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+            />
+          </div>
+        )}
         {/* 内容 */}
         <div className="flex-1 min-w-0">
           <h3 className={cn(
@@ -101,7 +123,7 @@ export default function ArticleListItem({
 
         {/* 操作按钮 */}
         {showActions && (onToggleStarred || onToggleRead) && (
-          <div className="flex items-center gap-0.5 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+          <div className="flex items-center gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
             {onToggleStarred && (
               <button
                 onClick={onToggleStarred}
@@ -126,7 +148,7 @@ export default function ArticleListItem({
 
         {/* 收藏标记（始终可见） */}
         {article.starred && showActions && (
-          <div className="flex-shrink-0 group-hover:hidden">
+          <div className="shrink-0 group-hover:hidden">
             <Star className="w-4 h-4 text-amber-500 fill-current" />
           </div>
         )}

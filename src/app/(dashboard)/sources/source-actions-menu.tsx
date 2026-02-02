@@ -2,16 +2,9 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { MoreHorizontal, Pencil, Trash2, Power, PowerOff } from "lucide-react";
+import { Pencil, Trash2, Power, PowerOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 
 interface Source {
   id: string;
@@ -44,7 +37,9 @@ export default function SourceActionsMenu({ source }: SourceActionsMenuProps) {
   const [error, setError] = useState("");
 
   // 切换启用/禁用状态
-  const handleToggleEnabled = async () => {
+  const handleToggleEnabled = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
     setLoading(true);
     try {
       const res = await fetch(`/api/sources/${source.id}`, {
@@ -114,43 +109,55 @@ export default function SourceActionsMenu({ source }: SourceActionsMenuProps) {
     }
   };
 
+  const openEditDialog = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setEditOpen(true);
+  };
+
+  const openDeleteDialog = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDeleteOpen(true);
+  };
+
   return (
     <>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="icon" className="h-8 w-8">
-            <MoreHorizontal className="w-4 h-4" />
-            <span className="sr-only">操作菜单</span>
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          <DropdownMenuItem onClick={() => setEditOpen(true)}>
-            <Pencil className="w-4 h-4 mr-2" />
-            编辑
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleToggleEnabled} disabled={loading}>
-            {source.enabled ? (
-              <>
-                <PowerOff className="w-4 h-4 mr-2" />
-                禁用
-              </>
-            ) : (
-              <>
-                <Power className="w-4 h-4 mr-2" />
-                启用
-              </>
-            )}
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            onClick={() => setDeleteOpen(true)}
-            className="text-red-600 focus:text-red-600"
-          >
-            <Trash2 className="w-4 h-4 mr-2" />
-            删除
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+      {/* 操作按钮组 */}
+      <div className="flex items-center gap-1">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          onClick={openEditDialog}
+          title="编辑"
+        >
+          <Pencil className="w-3.5 h-3.5" />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          onClick={handleToggleEnabled}
+          disabled={loading}
+          title={source.enabled ? "禁用" : "启用"}
+        >
+          {source.enabled ? (
+            <PowerOff className="w-3.5 h-3.5" />
+          ) : (
+            <Power className="w-3.5 h-3.5" />
+          )}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-muted-foreground hover:text-red-600"
+          onClick={openDeleteDialog}
+          title="删除"
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </Button>
+      </div>
 
       {/* 编辑对话框 */}
       {editOpen && (
