@@ -19,7 +19,8 @@ import {
   Trash2,
   CheckSquare,
   Square,
-  ArrowLeft
+  ArrowLeft,
+  ListChecks
 } from 'lucide-react'
 import ArticleListItem, { ArticleItem } from '@/components/article-list-item'
 
@@ -66,6 +67,8 @@ function ArticlesContent() {
   // 多选状态
   const [selectedArticleIds, setSelectedArticleIds] = useState<Set<string>>(new Set())
   const [batchLoading, setBatchLoading] = useState(false)
+  const [batchMode, setBatchMode] = useState(false)  // 批量选择模式
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)  // 删除确认弹框
 
   // 从 URL 参数初始化筛选状态
   const [statusFilter, setStatusFilter] = useState<'all' | 'unread' | 'starred'>(() => {
@@ -94,6 +97,9 @@ function ArticlesContent() {
   const currentSourceName = isSingleSourceMode
     ? sources.find(s => s.id === selectedSourceIds[0])?.name
     : null
+
+  // 是否显示多选框（批量模式开启或单一信息源模式）
+  const showBatchCheckbox = batchMode || isSingleSourceMode
 
   // 筛选面板展开状态
   const [filterExpanded, setFilterExpanded] = useState(false)
@@ -382,9 +388,31 @@ function ArticlesContent() {
         <div className="max-w-4xl mx-auto px-4 py-2.5">
           {/* 第一行：搜索 + 状态筛选 */}
           <div className="flex items-center gap-3">
-            {/* 单一信息源模式下显示全选按钮 */}
-            {isSingleSourceMode && articles.length > 0 && (
+            {/* 批量选择开关（非单一信息源模式时显示） */}
+            {!isSingleSourceMode && (
+              <button
+                onClick={() => {
+                  setBatchMode(!batchMode)
+                  if (batchMode) {
+                    clearSelection()
+                  }
+                }}
+                className={cn(
+                  "flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-md transition-all",
+                  batchMode
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
+                )}
+                title="批量编辑"
+              >
+                <ListChecks className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {/* 批量模式或单一信息源模式下显示全选按钮 */}
+            {showBatchCheckbox && articles.length > 0 && (
               <>
+                {!isSingleSourceMode && <div className="w-px h-5 bg-border/50" />}
                 <button
                   onClick={() => {
                     if (selectedArticleIds.size === articles.length) {
@@ -671,7 +699,7 @@ function ArticlesContent() {
                 key={article.id}
                 article={article}
                 isFocused={index === focusIndex}
-                showCheckbox={isSingleSourceMode}
+                showCheckbox={showBatchCheckbox}
                 isSelected={selectedArticleIds.has(article.id)}
                 onClick={() => selectArticle(article, index)}
                 onToggleStarred={(e) => toggleStarred(article, e)}
@@ -769,12 +797,43 @@ function ArticlesContent() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => executeBatchAction('delete')}
+                onClick={() => setDeleteConfirmOpen(true)}
                 disabled={batchLoading}
                 className="h-8 px-3 rounded-full text-red-600 hover:text-red-700 hover:bg-red-50"
               >
                 <Trash2 className="w-4 h-4 mr-1.5" />
                 删除
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 删除确认弹框 */}
+      {deleteConfirmOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl w-full max-w-sm mx-4 p-6">
+            <h2 className="text-lg font-semibold mb-2">确认删除</h2>
+            <p className="text-muted-foreground mb-4">
+              确定要删除选中的 {selectedArticleIds.size} 篇文章吗？此操作不可恢复。
+            </p>
+            <div className="flex justify-end space-x-3">
+              <Button
+                variant="outline"
+                onClick={() => setDeleteConfirmOpen(false)}
+                disabled={batchLoading}
+              >
+                取消
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={async () => {
+                  await executeBatchAction('delete')
+                  setDeleteConfirmOpen(false)
+                }}
+                disabled={batchLoading}
+              >
+                {batchLoading ? '删除中...' : '确认删除'}
               </Button>
             </div>
           </div>
