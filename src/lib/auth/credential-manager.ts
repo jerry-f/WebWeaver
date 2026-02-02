@@ -280,7 +280,7 @@ export class CredentialManager {
   updateCookie(domain: string, cookie: string): boolean {
     const mainDomain = domain.replace(/^www\./, '')
     const config = this.config.credentials[mainDomain]
-    
+
     if (!config) {
       return false
     }
@@ -293,6 +293,8 @@ export class CredentialManager {
       config.cookie = cookie.trim()
     }
 
+    // 更新时启用凭证
+    config.enabled = true
     // 更新时间戳
     config.lastUpdated = new Date().toISOString()
     this.saveConfig()

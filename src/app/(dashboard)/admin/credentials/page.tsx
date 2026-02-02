@@ -26,6 +26,7 @@ import {
   Shield,
   Copy,
   ExternalLink,
+  Edit,
 } from "lucide-react";
 
 interface Credential {
@@ -36,6 +37,7 @@ interface Credential {
   valid?: boolean;
   error?: string;
   lastChecked?: string;
+  lastUpdated?: string;
 }
 
 interface CheckResult {
@@ -51,10 +53,18 @@ export default function CredentialsPage() {
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
   const [checkResults, setCheckResults] = useState<Record<string, CheckResult>>({});
+  
+  // 添加凭证状态
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [newDomain, setNewDomain] = useState("");
   const [newCookie, setNewCookie] = useState("");
   const [adding, setAdding] = useState(false);
+
+  // 更新凭证状态
+  const [updateDialogOpen, setUpdateDialogOpen] = useState(false);
+  const [updateDomain, setUpdateDomain] = useState("");
+  const [updateCookie, setUpdateCookie] = useState("");
+  const [updating, setUpdating] = useState(false);
 
   // 加载凭证列表
   const loadCredentials = async () => {
@@ -139,6 +149,61 @@ export default function CredentialsPage() {
       }
     } catch (error) {
       console.error("删除失败:", error);
+    }
+  };
+
+  // 打开更新对话框
+  const openUpdateDialog = (domain: string) => {
+    setUpdateDomain(domain);
+    setUpdateCookie("");
+    setUpdateDialogOpen(true);
+  };
+
+  // 更新凭证（如果不存在则自动添加）
+  const handleUpdateCredential = async () => {
+    if (!updateDomain || !updateCookie) return;
+
+    setUpdating(true);
+    try {
+      // 先尝试 PUT 更新
+      let res = await fetch(`/api/credentials/${encodeURIComponent(updateDomain)}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cookie: updateCookie }),
+      });
+
+      // 如果凭证不存在（404），则使用 POST 添加
+      if (res.status === 404) {
+        res = await fetch("/api/credentials", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            domain: updateDomain,
+            cookie: updateCookie,
+          }),
+        });
+      }
+
+      if (res.ok) {
+        setUpdateDialogOpen(false);
+        setUpdateDomain("");
+        setUpdateCookie("");
+        // 清除该域名的检测结果，提示用户重新检测
+        setCheckResults((prev) => {
+          const next = { ...prev };
+          delete next[updateDomain];
+          return next;
+        });
+        loadCredentials();
+      } else {
+        const data = await res.json();
+        alert(data.error || "操作失败");
+      }
+    } catch (error) {
+      console.error("操作失败:", error);
+      alert("操作失败");
+    } finally {
+      setUpdating(false);
     }
   };
 
@@ -348,13 +413,23 @@ export default function CredentialsPage() {
                         size="sm"
                         onClick={() => checkCredentials(cred.domain)}
                         disabled={checking}
+                        title="检测有效性"
                       >
                         <RefreshCw className={`w-4 h-4 ${checking ? "animate-spin" : ""}`} />
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
+                        onClick={() => openUpdateDialog(cred.domain)}
+                        title="更新 Cookie"
+                      >
+                        <Edit className="w-4 h-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         onClick={() => window.open(`https://${cred.domain}`, "_blank")}
+                        title="打开网站"
                       >
                         <ExternalLink className="w-4 h-4" />
                       </Button>
@@ -363,6 +438,7 @@ export default function CredentialsPage() {
                         size="sm"
                         className="text-red-500 hover:text-red-600 hover:bg-red-50"
                         onClick={() => handleDelete(cred.domain)}
+                        title="删除"
                       >
                         <Trash2 className="w-4 h-4" />
                       </Button>
@@ -408,6 +484,47 @@ export default function CredentialsPage() {
           </Card>
         </div>
       )}
+
+      {/* 更新凭证对话框 */}
+      <Dialog open={updateDialogOpen} onOpenChange={setUpdateDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>更新凭证 - {updateDomain}</DialogTitle>
+            <DialogDescription>
+              粘贴新的 Cookie 来更新站点凭证
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">新 Cookie</label>
+              <textarea
+                className="w-full h-32 px-3 py-2 text-sm border rounded-md resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                placeholder="从浏览器 DevTools 复制的新 Cookie 字符串..."
+                value={updateCookie}
+                onChange={(e) => setUpdateCookie(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                打开 {updateDomain} → F12 → Application → Cookies，复制所有 Cookie
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setUpdateDialogOpen(false)}
+            >
+              取消
+            </Button>
+            <Button
+              onClick={handleUpdateCredential}
+              disabled={updating || !updateCookie}
+            >
+              {updating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              更新
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
