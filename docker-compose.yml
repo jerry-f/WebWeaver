@@ -70,16 +70,19 @@ services:
   # Go 抓取服务
   # 高性能 HTTP 抓取 + 正文提取
   # HTTP: http://localhost:8088
+  # gRPC: localhost:50051
   go-scraper:
     build: ./go-scraper-service
     container_name: newsflow-go-scraper
     environment:
       - HTTP_PORT=8080
+      - GRPC_PORT=50051
       - MAX_CONCURRENT=100
       - REQUEST_TIMEOUT_MS=15000
       - BROWSERLESS_URL=http://browserless:3000
     ports:
       - "8088:8080"
+      - "50051:50051"
     deploy:
       resources:
         limits:

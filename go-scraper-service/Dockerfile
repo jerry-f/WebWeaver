@@ -1,5 +1,5 @@
 # 构建阶段
-FROM golang:1.23-alpine AS builder
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
@@ -28,10 +28,11 @@ RUN apk add --no-cache ca-certificates libc6-compat
 COPY --from=builder /go-scraper /app/go-scraper
 
 # 暴露端口
-EXPOSE 8080
+EXPOSE 8080 50051
 
 # 环境变量
 ENV HTTP_PORT=8080
+ENV GRPC_PORT=50051
 ENV MAX_CONCURRENT=100
 ENV REQUEST_TIMEOUT_MS=15000
 

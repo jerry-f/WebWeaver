@@ -13,6 +13,8 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.11.1",
+    "@grpc/grpc-js": "^1.14.3",
+    "@grpc/proto-loader": "^0.8.0",
     "@mozilla/readability": "^0.6.0",
     "@prisma/client": "^5.22.0",
     "@radix-ui/react-avatar": "^1.1.11",
