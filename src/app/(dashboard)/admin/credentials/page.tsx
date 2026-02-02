@@ -52,7 +52,7 @@ interface CheckResult {
 export default function CredentialsPage() {
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [loading, setLoading] = useState(true);
-  const [checking, setChecking] = useState(false);
+  const [checkingDomains, setCheckingDomains] = useState<Set<string>>(new Set());
   const [checkResults, setCheckResults] = useState<Record<string, CheckResult>>({});
   
   // 添加凭证状态
@@ -82,7 +82,10 @@ export default function CredentialsPage() {
 
   // 检测凭证有效性
   const checkCredentials = async (domain?: string) => {
-    setChecking(true);
+    // 标记正在检测的域名
+    const domainsToCheck = domain ? [domain] : credentials.map(c => c.domain);
+    setCheckingDomains(prev => new Set([...prev, ...domainsToCheck]));
+
     try {
       const res = await fetch("/api/credentials/check", {
         method: "POST",
@@ -100,7 +103,12 @@ export default function CredentialsPage() {
     } catch (error) {
       console.error("检测失败:", error);
     } finally {
-      setChecking(false);
+      // 移除已完成检测的域名
+      setCheckingDomains(prev => {
+        const next = new Set(prev);
+        domainsToCheck.forEach(d => next.delete(d));
+        return next;
+      });
     }
   };
 
@@ -294,9 +302,9 @@ export default function CredentialsPage() {
           <Button
             variant="outline"
             onClick={() => checkCredentials()}
-            disabled={checking}
+            disabled={checkingDomains.size > 0}
           >
-            {checking ? (
+            {checkingDomains.size > 0 ? (
               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
             ) : (
               <RefreshCw className="w-4 h-4 mr-2" />
@@ -442,10 +450,10 @@ export default function CredentialsPage() {
                         variant="ghost"
                         size="sm"
                         onClick={() => checkCredentials(cred.domain)}
-                        disabled={checking}
+                        disabled={checkingDomains.has(cred.domain)}
                         title="检测有效性"
                       >
-                        <RefreshCw className={`w-4 h-4 ${checking ? "animate-spin" : ""}`} />
+                        <RefreshCw className={`w-4 h-4 ${checkingDomains.has(cred.domain) ? "animate-spin" : ""}`} />
                       </Button>
                       <Button
                         variant="ghost"
