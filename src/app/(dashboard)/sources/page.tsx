@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { Rss, Globe, Zap } from "lucide-react";
 import AddSourceButton from "./add-source-button";
 import SourceFetchButton from "./source-fetch-button";
+import SourceActionsMenu from "./source-actions-menu";
 
 async function getSources() {
   return prisma.source.findMany({
@@ -89,6 +90,17 @@ export default async function SourcesPage() {
                         </Badge>
                       </div>
                     </div>
+                    <SourceActionsMenu
+                      source={{
+                        id: source.id,
+                        name: source.name,
+                        url: source.url,
+                        type: source.type,
+                        category: source.category ?? "news",
+                        enabled: source.enabled,
+                        fetchFullText: source.fetchFullText,
+                      }}
+                    />
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
