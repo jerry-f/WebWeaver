@@ -348,7 +348,8 @@ async function processSourceFetchJob(job: Job<SourceFetchJobData>): Promise<void
         newArticles.map(a => ({
           articleId: a.id,
           url: a.url,
-          sourceId: source.id
+          sourceId: source.id,
+          strategy: fetchConfig.strategy
         }))
       )
       queued = newArticles.length

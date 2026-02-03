@@ -20,7 +20,7 @@ import {
 import { addFetchJobs } from '../queue/queues'
 import { publishJobStatus } from '../queue/redis'
 import { domainScheduler, extractDomainFromUrl } from '../scheduler/domain-scheduler'
-import type { SiteCrawlConfig } from './types'
+import type { SiteCrawlConfig, FetchStrategy } from './types'
 
 /**
  * 链接发现结果
@@ -329,9 +329,9 @@ export async function startSiteCrawl(
   }
 
   // 解析配置
-  const config: SiteCrawlConfig = source.config
-    ? JSON.parse(source.config).siteCrawl || {}
-    : {}
+  const parsedConfig = source.config ? JSON.parse(source.config) : {}
+  const config: SiteCrawlConfig = parsedConfig.siteCrawl || {}
+  const fetchStrategy = parsedConfig.fetch?.strategy
 
   // 创建种子 URL 记录
   const normalized = normalizeUrl(source.url)
@@ -370,7 +370,7 @@ export async function startSiteCrawl(
   console.log(`[SiteCrawl] 发现完成: ${totalProcessed} processed, ${totalDiscovered} discovered`)
 
   // 触发内容抓取
-  const fetchedCount = await triggerContentFetch(sourceId, jobId)
+  const fetchedCount = await triggerContentFetch(sourceId, jobId, fetchStrategy)
 
   // 发布完成状态
   await publishJobStatus({
@@ -401,7 +401,8 @@ export async function startSiteCrawl(
  */
 export async function triggerContentFetch(
   sourceId: string,
-  jobId: string
+  jobId: string,
+  strategy?: FetchStrategy
 ): Promise<number> {
   let totalQueued = 0
   const BATCH_SIZE = 500
@@ -515,7 +516,8 @@ export async function triggerContentFetch(
         .map(a => ({
           articleId: a.id,
           url: a.url!,
-          sourceId
+          sourceId,
+          strategy
         }))
 
       if (jobs.length > 0) {
