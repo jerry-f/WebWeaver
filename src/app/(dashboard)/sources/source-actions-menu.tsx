@@ -15,7 +15,7 @@ import {
 import SourceForm, { type SourceFormData, type SourceData } from "./source-form";
 
 interface SourceActionsMenuProps {
-  source: SourceData & { id: string; enabled: boolean };
+  source: SourceData;
 }
 
 export default function SourceActionsMenu({ source }: SourceActionsMenuProps) {

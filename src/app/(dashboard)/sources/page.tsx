@@ -6,6 +6,7 @@ import { Rss, Globe, Zap } from "lucide-react";
 import AddSourceButton from "./add-source-button";
 import SourceFetchButton from "./source-fetch-button";
 import SourceActionsMenu from "./source-actions-menu";
+import {  type SourceData } from "./source-form";
 
 async function getSources() {
   return prisma.source.findMany({
@@ -108,15 +109,7 @@ export default async function SourcesPage() {
                 {/* 操作按钮区域 - 放在 Link 外面 */}
                 <div className="absolute top-3 right-3 z-20">
                   <SourceActionsMenu
-                    source={{
-                      id: source.id,
-                      name: source.name,
-                      url: source.url,
-                      type: source.type,
-                      category: source.category ?? "news",
-                      enabled: source.enabled,
-                      fetchFullText: source.fetchFullText,
-                    }}
+                    source={source as SourceData}
                   />
                 </div>
                 <div className="absolute bottom-4 right-4 z-20">

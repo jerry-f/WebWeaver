@@ -50,6 +50,7 @@ export interface SourceConfig {
     includePatterns?: string[];
     excludePatterns?: string[];
     sameDomainOnly?: boolean;
+    seedPathOnly?: boolean;
     linkSelector?: string;
     contentSelector?: string;
   };
@@ -110,6 +111,8 @@ export default function SourceForm({
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [sourceType, setSourceType] = useState(source?.type || "rss");
   const [config, setConfig] = useState<SourceConfig>({});
+  // 用于强制重新渲染表单，解决 defaultValue 不更新的问题
+  const [configLoaded, setConfigLoaded] = useState(false);
 
   // 解析配置
   useEffect(() => {
@@ -119,9 +122,13 @@ export default function SourceForm({
           ? JSON.parse(source.config)
           : source.config;
         setConfig(parsed);
+        setConfigLoaded(true);
       } catch {
         setConfig({});
+        setConfigLoaded(true);
       }
+    } else {
+      setConfigLoaded(true);
     }
     if (source?.type) {
       setSourceType(source.type);
@@ -180,21 +187,23 @@ export default function SourceForm({
         includePatterns: parsePatterns(formData.get("includePatterns")),
         excludePatterns: parsePatterns(formData.get("excludePatterns")),
         sameDomainOnly: formData.get("sameDomainOnly") === "on",
+        seedPathOnly: formData.get("seedPathOnly") === "on",
         linkSelector: (formData.get("crawlLinkSelector") as string) || undefined,
         contentSelector: (formData.get("crawlContentSelector") as string) || undefined,
       };
     }
 
-    const data: SourceFormData = {
+    const data = {
       name: formData.get("name") as string,
       url: formData.get("url") as string,
       type: sourceType,
       category: formData.get("category") as string,
       fetchFullText: formData.get("fetchFullText") === "on",
-      config: newConfig,
+      // Prisma 期望 config 是字符串类型
+      config: JSON.stringify(newConfig),
     };
 
-    await onSubmit(data);
+    await onSubmit(data as unknown as SourceFormData);
   };
 
   return (
@@ -284,7 +293,7 @@ export default function SourceForm({
       </div>
 
       {/* Scrape 类型的选择器配置 */}
-      {sourceType === "scrape" && (
+      {sourceType === "scrape" && configLoaded && (
         <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
           <h3 className="text-sm font-medium flex items-center gap-2">
             <Settings2 className="w-4 h-4" />
@@ -356,8 +365,11 @@ export default function SourceForm({
       )}
 
       {/* SiteCrawl 类型的配置 */}
-      {sourceType === "sitecrawl" && (
-        <div className="space-y-3 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg">
+      {sourceType === "sitecrawl" && configLoaded && (
+        <div
+          key={JSON.stringify(config.siteCrawl)}
+          className="space-y-3 p-4 bg-gray-50 dark:bg-gray-900 rounded-lg"
+        >
           <h3 className="text-sm font-medium flex items-center gap-2">
             <Settings2 className="w-4 h-4" />
             全站爬取配置
@@ -432,6 +444,19 @@ export default function SourceForm({
             />
             <label htmlFor="sameDomainOnly" className="text-sm">
               仅爬取同域名页面
+            </label>
+          </div>
+
+          <div className="flex items-center space-x-2">
+            <input
+              type="checkbox"
+              name="seedPathOnly"
+              id="seedPathOnly"
+              defaultChecked={config.siteCrawl?.seedPathOnly === true}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            <label htmlFor="seedPathOnly" className="text-sm">
+              仅爬取种子路径前缀（如种子为 /docs/zh-CN，则只爬取该路径下的页面）
             </label>
           </div>
         </div>
