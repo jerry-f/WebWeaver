@@ -407,23 +407,51 @@ async function processCrawlDiscoveryJob(job: Job<CrawlDiscoveryJobData>): Promis
 
   const config: SourceConfig = source.config ? JSON.parse(source.config) : {}
   const siteCrawlConfig: SiteCrawlConfig = config.siteCrawl || {}
+  const maxUrls = siteCrawlConfig.maxUrls ?? 1000
 
-  // 2. 更新 CrawlUrl 状态
+  // 2. 提前检查是否已达到 maxUrls 限制
+  const existingCount = await prisma.crawlUrl.count({ where: { sourceId } })
+  if (existingCount >= maxUrls) {
+    // 已达限制，直接标记完成并检查是否触发内容抓取
+    const normalized = normalizeUrl(url)
+    await prisma.crawlUrl.updateMany({
+      where: { sourceId, normalizedUrl: normalized },
+      data: { status: 'completed', crawledAt: new Date() }
+    })
+
+    // 检查是否所有任务都完成了
+    const pendingCount = await prisma.crawlUrl.count({
+      where: { sourceId, status: { in: ['pending', 'crawling'] } }
+    })
+
+    if (pendingCount === 0) {
+      console.log(`[CrawlDiscoveryWorker] maxUrls reached, triggering content fetch`)
+      await triggerContentFetch(sourceId, jobId)
+      await publishJobStatus({
+        jobId, sourceId, type: 'crawl_discovery', status: 'completed', timestamp: Date.now()
+      })
+    }
+    return
+  }
+
+  console.log(`[CrawlDiscoveryWorker] Processing: ${url} (depth: ${depth})`)
+
+  // 3. 更新 CrawlUrl 状态
   const normalized = normalizeUrl(url)
   await prisma.crawlUrl.updateMany({
     where: { sourceId, normalizedUrl: normalized },
     data: { status: 'crawling' }
   })
 
-  // 3. 使用 DomainScheduler 限流
+  // 4. 使用 DomainScheduler 限流
   const domain = extractDomainFromUrl(url)
   await domainScheduler.acquireWithWait(domain)
 
   try {
-    // 4. 执行发现
+    // 5. 执行发现
     const result = await discoverPage(sourceId, url, depth, siteCrawlConfig, jobId)
 
-    // 5. 更新状态
+    // 6. 更新状态
     await prisma.crawlUrl.updateMany({
       where: { sourceId, normalizedUrl: normalized },
       data: {
@@ -436,7 +464,7 @@ async function processCrawlDiscoveryJob(job: Job<CrawlDiscoveryJobData>): Promis
 
     console.log(`[CrawlDiscoveryWorker] Discovered ${result.discovered} links, queued ${result.queued}`)
 
-    // 6. 检查是否发现阶段完成，触发内容抓取
+    // 7. 检查是否发现阶段完成，触发内容抓取
     const pendingDiscovery = await prisma.crawlUrl.count({
       where: { sourceId, status: 'pending' }
     })

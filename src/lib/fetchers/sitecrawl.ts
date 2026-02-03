@@ -151,53 +151,69 @@ export async function discoverPage(
     return { discovered: 0, queued: 0 }
   }
 
-  // 抓取页面
+  // 抓取页面 - 使用 fetchRaw 获取原始 HTML（不经过 Readability 处理）
   const fetcher = getUnifiedFetcher()
-  const result = await fetcher.fetch(url, {
+  const result = await fetcher.fetchRaw(url, {
     sourceId,
-    timeout: 30000,
-    strategy: 'auto'
+    timeout: 30000
   })
 
   if (!result.success) {
-    console.warn(`[SiteCrawl] 抓取失败: ${url}`)
+    console.warn(`[SiteCrawl] 抓取失败: ${url} - ${result.error}`)
     return { discovered: 0, queued: 0 }
   }
 
   // 提取链接
-  const html = result.content || ''
+  const html = result.body || ''
   const links = extractLinks(html, result.finalUrl || url, config)
 
-  // 批量入库（去重）
+  // 限制新增数量，避免超过 maxUrls
+  const remainingSlots = maxUrls - existingCount
+  const linksToInsert = links.slice(0, remainingSlots)
+
+  if (linksToInsert.length === 0) {
+    return { discovered: 0, queued: 0 }
+  }
+
+  // 批量插入 - 使用 createMany 跳过重复项
+  // 注意：SQLite 的 createMany 不支持 skipDuplicates，需要用事务处理
+  const insertData = linksToInsert.map(link => ({
+    sourceId,
+    url: link.url,
+    normalizedUrl: link.normalizedUrl,
+    depth: currentDepth + 1,
+    title: link.title,
+    parentUrl: url,
+    status: 'pending' as const
+  }))
+
+  // 使用事务批量插入，忽略重复
   let discovered = 0
   const newLinks: DiscoveredLink[] = []
 
-  for (const link of links) {
-    // 检查是否超过最大 URL 数
-    if (existingCount + discovered >= maxUrls) {
-      break
-    }
+  // 先查询已存在的 URL
+  const existingUrls = await prisma.crawlUrl.findMany({
+    where: {
+      sourceId,
+      normalizedUrl: { in: linksToInsert.map(l => l.normalizedUrl) }
+    },
+    select: { normalizedUrl: true }
+  })
+  const existingSet = new Set(existingUrls.map(u => u.normalizedUrl))
 
-    try {
-      await prisma.crawlUrl.create({
-        data: {
-          sourceId,
-          url: link.url,
-          normalizedUrl: link.normalizedUrl,
-          depth: currentDepth + 1,
-          title: link.title,
-          parentUrl: url,
-          status: 'pending'
-        }
-      })
-      discovered++
-      newLinks.push(link)
-    } catch {
-      // 唯一约束冲突，URL 已存在，跳过
-    }
+  // 过滤出真正需要插入的
+  const toInsert = insertData.filter(d => !existingSet.has(d.normalizedUrl))
+
+  if (toInsert.length > 0) {
+    // 批量插入 - 已在上面过滤掉重复项
+    await prisma.crawlUrl.createMany({
+      data: toInsert
+    })
+    discovered = toInsert.length
+    newLinks.push(...linksToInsert.filter(l => !existingSet.has(l.normalizedUrl)))
   }
 
-  // 继续发现（深度控制）
+  // 继续发现（深度控制）- 只有未达到最大深度才继续
   let queued = 0
   if (currentDepth < maxDepth && newLinks.length > 0) {
     const toDiscover = newLinks.map(l => ({
@@ -207,10 +223,8 @@ export async function discoverPage(
       depth: currentDepth + 1
     }))
 
-    if (toDiscover.length > 0) {
-      await addCrawlDiscoveryJobs(toDiscover)
-      queued = toDiscover.length
-    }
+    await addCrawlDiscoveryJobs(toDiscover)
+    queued = toDiscover.length
   }
 
   return { discovered, queued }
@@ -285,6 +299,7 @@ export async function startSiteCrawl(
  * 将已发现的 URL 转换为文章抓取任务
  *
  * 在发现阶段完成后调用
+ * 处理所有 completed 状态且尚未关联文章的 CrawlUrl
  *
  * @param sourceId - 信息源 ID
  * @param jobId - 任务 ID
@@ -294,58 +309,106 @@ export async function triggerContentFetch(
   sourceId: string,
   jobId: string
 ): Promise<number> {
-  // 获取所有 pending 状态的 CrawlUrl
-  const pendingUrls = await prisma.crawlUrl.findMany({
+  // 获取所有已完成发现但尚未创建文章的 CrawlUrl
+  const urlsToProcess = await prisma.crawlUrl.findMany({
     where: {
       sourceId,
-      status: 'pending'
+      status: 'completed',
+      articleId: null
     },
-    take: 100 // 批量处理
+    take: 500 // 增加批量处理数量
   })
 
-  if (pendingUrls.length === 0) {
+  if (urlsToProcess.length === 0) {
+    console.log(`[SiteCrawl] ${sourceId}: 没有待抓取的 URL`)
     return 0
   }
 
-  // 创建 Article 记录并推送抓取任务
-  const jobs: { articleId: string; url: string; sourceId: string }[] = []
+  console.log(`[SiteCrawl] ${sourceId}: 开始为 ${urlsToProcess.length} 个 URL 创建文章`)
 
-  for (const crawlUrl of pendingUrls) {
-    // 创建文章记录
-    const article = await prisma.article.upsert({
-      where: {
-        sourceId_externalId: {
-          sourceId,
-          externalId: crawlUrl.normalizedUrl
-        }
-      },
-      create: {
+  // 批量创建文章 - 先查询已存在的
+  const existingArticles = await prisma.article.findMany({
+    where: {
+      sourceId,
+      externalId: { in: urlsToProcess.map(u => u.normalizedUrl) }
+    },
+    select: { id: true, externalId: true }
+  })
+  const existingMap = new Map(existingArticles.map(a => [a.externalId, a.id]))
+
+  // 分离需要创建和已存在的
+  const toCreate: { sourceId: string; externalId: string; title: string; url: string; contentStatus: string }[] = []
+  const crawlUrlUpdates: { crawlUrlId: string; articleId: string }[] = []
+
+  for (const crawlUrl of urlsToProcess) {
+    const existingId = existingMap.get(crawlUrl.normalizedUrl)
+    if (existingId) {
+      // 文章已存在，只需关联
+      crawlUrlUpdates.push({ crawlUrlId: crawlUrl.id, articleId: existingId })
+    } else {
+      toCreate.push({
         sourceId,
         externalId: crawlUrl.normalizedUrl,
         title: crawlUrl.title || crawlUrl.url,
         url: crawlUrl.url,
         contentStatus: 'pending'
-      },
-      update: {}
-    })
-
-    // 更新 CrawlUrl 状态
-    await prisma.crawlUrl.update({
-      where: { id: crawlUrl.id },
-      data: {
-        status: 'crawling',
-        articleId: article.id
-      }
-    })
-
-    jobs.push({
-      articleId: article.id,
-      url: crawlUrl.url,
-      sourceId
-    })
+      })
+    }
   }
 
-  // 推送到 FetchWorker 队列
+  // 批量创建新文章
+  if (toCreate.length > 0) {
+    await prisma.article.createMany({
+      data: toCreate
+    })
+
+    // 查询新创建的文章 ID
+    const newArticles = await prisma.article.findMany({
+      where: {
+        sourceId,
+        externalId: { in: toCreate.map(a => a.externalId) }
+      },
+      select: { id: true, externalId: true, url: true }
+    })
+
+    // 建立 externalId -> articleId 映射
+    const newArticleMap = new Map(newArticles.map(a => [a.externalId, a]))
+
+    // 更新 crawlUrl 关联
+    for (const crawlUrl of urlsToProcess) {
+      const article = newArticleMap.get(crawlUrl.normalizedUrl)
+      if (article) {
+        crawlUrlUpdates.push({ crawlUrlId: crawlUrl.id, articleId: article.id })
+      }
+    }
+  }
+
+  // 批量更新 CrawlUrl 关联文章 ID
+  if (crawlUrlUpdates.length > 0) {
+    // 使用事务批量更新
+    await prisma.$transaction(
+      crawlUrlUpdates.map(({ crawlUrlId, articleId }) =>
+        prisma.crawlUrl.update({
+          where: { id: crawlUrlId },
+          data: { articleId }
+        })
+      )
+    )
+  }
+
+  // 直接从 crawlUrlUpdates 构建抓取任务列表（避免重复查询）
+  // 建立 crawlUrlId -> crawlUrl 的映射
+  const crawlUrlMap = new Map(urlsToProcess.map(u => [u.id, u]))
+  const jobs: { articleId: string; url: string; sourceId: string }[] = []
+
+  for (const { crawlUrlId, articleId } of crawlUrlUpdates) {
+    const crawlUrl = crawlUrlMap.get(crawlUrlId)
+    if (crawlUrl) {
+      jobs.push({ articleId, url: crawlUrl.url, sourceId })
+    }
+  }
+
+  // 批量推送到 FetchWorker 队列
   if (jobs.length > 0) {
     await addFetchJobs(jobs)
   }
@@ -358,7 +421,7 @@ export async function triggerContentFetch(
     status: 'progress',
     progress: {
       current: jobs.length,
-      total: pendingUrls.length,
+      total: urlsToProcess.length,
       queued: jobs.length
     },
     timestamp: Date.now()

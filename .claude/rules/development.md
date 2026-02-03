@@ -61,46 +61,10 @@
 ## 性能规范
 
 ### 数据库操作
-- **禁止在循环中执行数据库操作**，使用批量操作替代：
-  ```typescript
-  // ❌ 错误：N 次数据库请求
-  for (const item of items) {
-    await prisma.article.create({ data: item })
-  }
-
-  // ✅ 正确：1 次批量请求
-  await prisma.article.createMany({ data: items })
-  ```
-
-- **批量查询去重**：插入前先批量查询已存在记录，过滤后再批量插入
-  ```typescript
-  // 1. 批量查询已存在
-  const existing = await prisma.model.findMany({
-    where: { id: { in: ids } },
-    select: { id: true }
-  })
-  const existingSet = new Set(existing.map(e => e.id))
-
-  // 2. 过滤后批量插入
-  const toInsert = items.filter(i => !existingSet.has(i.id))
-  await prisma.model.createMany({ data: toInsert })
-  ```
-
-- **批量更新使用事务**：
-  ```typescript
-  await prisma.$transaction(
-    updates.map(({ id, data }) =>
-      prisma.model.update({ where: { id }, data })
-    )
-  )
-  ```
-
-- **避免重复查询**：使用 Map 缓存已查询的数据，避免在循环中重复查询相同记录
-
-### Worker 任务处理
-- 批量处理数量建议：`take: 100-500`
-- 避免在任务处理函数中做 N+1 查询
-- 使用内存中的 Map 建立映射关系，避免重复数据库查询
+- **禁止在循环中执行数据库操作**，使用 `createMany`/`findMany` 批量操作
+- **批量插入前先查询去重**：先 `findMany` 查已存在，过滤后再 `createMany`
+- **批量更新使用事务**：`prisma.$transaction([...updates])`
+- **使用 Map 缓存**：避免循环中重复查询相同记录
 
 ## 安全
 

@@ -11,6 +11,7 @@
 import { GrpcClientAdapter, type IScraperClient } from './clients/scraper-adapter'
 import { CredentialManager } from '../auth/credential-manager'
 import { fetchFullText, type FullTextResult } from './fulltext'
+import { fetchFullTextWithBrowserless, renderPage, checkBrowserlessHealth } from './clients/browserless'
 import type { FetchStrategy } from './types'
 
 /**
@@ -124,6 +125,9 @@ export class UnifiedFetcher {
 
     if (strategy === 'local') {
       result = await this.fetchLocal(url, options, authenticated)
+    } else if (strategy === 'browserless') {
+      // 使用 Browserless 浏览器渲染（用于 SPA 页面）
+      result = await this.fetchWithBrowserless(url, options, authenticated)
     } else if (strategy === 'go' || (strategy === 'auto' && await this.isScraperAvailable())) {
       result = await this.fetchWithScraper(url, headers, options, authenticated)
 
@@ -245,6 +249,58 @@ export class UnifiedFetcher {
         strategy: 'local',
         duration: 0,
         authenticated: false,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  }
+
+  /**
+   * 使用 Browserless 浏览器渲染抓取
+   * 用于处理需要 JavaScript 渲染的 SPA 页面
+   */
+  private async fetchWithBrowserless(
+    url: string,
+    options: UnifiedFetchOptions,
+    authenticated: boolean
+  ): Promise<UnifiedFetchResult> {
+    try {
+      const result = await fetchFullTextWithBrowserless(url, {
+        timeout: options.timeout
+      })
+
+      if (!result) {
+        return {
+          success: false,
+          strategy: 'browserless',
+          duration: 0,
+          authenticated,
+          error: 'Browserless 渲染失败'
+        }
+      }
+
+      return {
+        success: true,
+        title: result.title,
+        content: result.content,
+        textContent: result.textContent,
+        excerpt: result.excerpt,
+        byline: result.byline,
+        siteName: result.siteName,
+        images: result.images?.map(img => ({
+          originalUrl: img.originalUrl,
+          alt: img.alt
+        })),
+        strategy: 'browserless',
+        duration: result.duration,
+        authenticated
+      }
+    } catch (error) {
+      console.error('[UnifiedFetcher] Browserless error:', error)
+      return {
+        success: false,
+        strategy: 'browserless',
+        duration: 0,
+        authenticated,
         error: error instanceof Error ? error.message : String(error)
       }
     }
