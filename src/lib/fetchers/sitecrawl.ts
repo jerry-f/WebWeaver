@@ -403,125 +403,149 @@ export async function triggerContentFetch(
   sourceId: string,
   jobId: string
 ): Promise<number> {
-  // 获取所有已完成发现但尚未创建文章的 CrawlUrl
-  const urlsToProcess = await prisma.crawlUrl.findMany({
-    where: {
-      sourceId,
-      status: 'completed',
-      articleId: null
-    },
-    take: 500 // 增加批量处理数量
-  })
+  let totalQueued = 0
+  const BATCH_SIZE = 500
 
-  if (urlsToProcess.length === 0) {
-    console.log(`[SiteCrawl] ${sourceId}: 没有待抓取的 URL`)
-    return 0
-  }
-
-  console.log(`[SiteCrawl] ${sourceId}: 开始为 ${urlsToProcess.length} 个 URL 创建文章`)
-
-  // 批量创建文章 - 先查询已存在的
-  const existingArticles = await prisma.article.findMany({
-    where: {
-      sourceId,
-      externalId: { in: urlsToProcess.map(u => u.normalizedUrl) }
-    },
-    select: { id: true, externalId: true }
-  })
-  const existingMap = new Map(existingArticles.map(a => [a.externalId, a.id]))
-
-  // 分离需要创建和已存在的
-  const toCreate: { sourceId: string; externalId: string; title: string; url: string; contentStatus: string }[] = []
-  const crawlUrlUpdates: { crawlUrlId: string; articleId: string }[] = []
-
-  for (const crawlUrl of urlsToProcess) {
-    const existingId = existingMap.get(crawlUrl.normalizedUrl)
-    if (existingId) {
-      // 文章已存在，只需关联
-      crawlUrlUpdates.push({ crawlUrlId: crawlUrl.id, articleId: existingId })
-    } else {
-      toCreate.push({
-        sourceId,
-        externalId: crawlUrl.normalizedUrl,
-        title: crawlUrl.title || crawlUrl.url,
-        url: crawlUrl.url,
-        contentStatus: 'pending'
-      })
-    }
-  }
-
-  // 批量创建新文章
-  if (toCreate.length > 0) {
-    await prisma.article.createMany({
-      data: toCreate
-    })
-
-    // 查询新创建的文章 ID
-    const newArticles = await prisma.article.findMany({
+  // 循环处理，避免 take 限制导致遗漏
+  while (true) {
+    // 获取一批未关联文章的 CrawlUrl
+    const urlsToProcess = await prisma.crawlUrl.findMany({
       where: {
         sourceId,
-        externalId: { in: toCreate.map(a => a.externalId) }
+        status: 'completed',
+        articleId: null
       },
-      select: { id: true, externalId: true, url: true }
+      take: BATCH_SIZE
     })
 
-    // 建立 externalId -> articleId 映射
-    const newArticleMap = new Map(newArticles.map(a => [a.externalId, a]))
+    if (urlsToProcess.length === 0) {
+      break
+    }
 
-    // 更新 crawlUrl 关联
+    console.log(`[SiteCrawl] ${sourceId}: 处理 ${urlsToProcess.length} 个 URL`)
+
+    // 批量查询已存在的文章（包含 contentStatus）
+    const existingArticles = await prisma.article.findMany({
+      where: {
+        sourceId,
+        externalId: { in: urlsToProcess.map(u => u.normalizedUrl) }
+      },
+      select: { id: true, externalId: true, contentStatus: true }
+    })
+    const existingMap = new Map(existingArticles.map(a => [a.externalId, a]))
+
+    // 分离需要创建的和已存在的
+    const toCreate: { sourceId: string; externalId: string; title: string; url: string; contentStatus: string }[] = []
+    const crawlUrlUpdates: { crawlUrlId: string; articleId: string }[] = []
+    // 只收集需要抓取的文章 ID（新创建的 + 已存在但 pending 的）
+    const articleIdsToFetch: Set<string> = new Set()
+
     for (const crawlUrl of urlsToProcess) {
-      const article = newArticleMap.get(crawlUrl.normalizedUrl)
-      if (article) {
-        crawlUrlUpdates.push({ crawlUrlId: crawlUrl.id, articleId: article.id })
+      const existing = existingMap.get(crawlUrl.normalizedUrl)
+      if (existing) {
+        // 文章已存在，关联 CrawlUrl
+        crawlUrlUpdates.push({ crawlUrlId: crawlUrl.id, articleId: existing.id })
+        // 只有 contentStatus 为 pending 的才需要重新入队
+        if (existing.contentStatus === 'pending') {
+          articleIdsToFetch.add(existing.id)
+        }
+      } else {
+        toCreate.push({
+          sourceId,
+          externalId: crawlUrl.normalizedUrl,
+          title: crawlUrl.title || crawlUrl.url,
+          url: crawlUrl.url,
+          contentStatus: 'pending'
+        })
       }
     }
-  }
 
-  // 批量更新 CrawlUrl 关联文章 ID
-  if (crawlUrlUpdates.length > 0) {
-    // 使用事务批量更新
-    await prisma.$transaction(
-      crawlUrlUpdates.map(({ crawlUrlId, articleId }) =>
-        prisma.crawlUrl.update({
-          where: { id: crawlUrlId },
-          data: { articleId }
-        })
+    // 批量创建新文章
+    if (toCreate.length > 0) {
+      await prisma.article.createMany({
+        data: toCreate
+      })
+
+      // 查询新创建的文章 ID
+      const newArticles = await prisma.article.findMany({
+        where: {
+          sourceId,
+          externalId: { in: toCreate.map(a => a.externalId) }
+        },
+        select: { id: true, externalId: true }
+      })
+
+      // 建立 externalId -> article 映射
+      const newArticleMap = new Map(newArticles.map(a => [a.externalId, a]))
+
+      // 更新 crawlUrl 关联，并收集需要抓取的文章
+      for (const crawlUrl of urlsToProcess) {
+        const article = newArticleMap.get(crawlUrl.normalizedUrl)
+        if (article) {
+          crawlUrlUpdates.push({ crawlUrlId: crawlUrl.id, articleId: article.id })
+          articleIdsToFetch.add(article.id)
+        }
+      }
+    }
+
+    // 批量更新 CrawlUrl 关联文章 ID
+    if (crawlUrlUpdates.length > 0) {
+      await prisma.$transaction(
+        crawlUrlUpdates.map(({ crawlUrlId, articleId }) =>
+          prisma.crawlUrl.update({
+            where: { id: crawlUrlId },
+            data: { articleId }
+          })
+        )
       )
-    )
-  }
+    }
 
-  // 直接从 crawlUrlUpdates 构建抓取任务列表（避免重复查询）
-  // 建立 crawlUrlId -> crawlUrl 的映射
-  const crawlUrlMap = new Map(urlsToProcess.map(u => [u.id, u]))
-  const jobs: { articleId: string; url: string; sourceId: string }[] = []
+    // 构建抓取任务：只抓取需要抓取的文章
+    if (articleIdsToFetch.size > 0) {
+      // 查询需要抓取的文章详情
+      const articlesToFetch = await prisma.article.findMany({
+        where: {
+          id: { in: Array.from(articleIdsToFetch) }
+        },
+        select: { id: true, url: true }
+      })
 
-  for (const { crawlUrlId, articleId } of crawlUrlUpdates) {
-    const crawlUrl = crawlUrlMap.get(crawlUrlId)
-    if (crawlUrl) {
-      jobs.push({ articleId, url: crawlUrl.url, sourceId })
+      const jobs = articlesToFetch
+        .filter(a => a.url)  // 确保有 URL
+        .map(a => ({
+          articleId: a.id,
+          url: a.url!,
+          sourceId
+        }))
+
+      if (jobs.length > 0) {
+        await addFetchJobs(jobs)
+        totalQueued += jobs.length
+      }
+    }
+
+    // 发布进度
+    await publishJobStatus({
+      jobId,
+      sourceId,
+      type: 'crawl_discovery',
+      status: 'progress',
+      progress: {
+        current: totalQueued,
+        total: urlsToProcess.length,
+        queued: totalQueued
+      },
+      timestamp: Date.now()
+    })
+
+    // 如果本批次不足 BATCH_SIZE，说明没有更多了
+    if (urlsToProcess.length < BATCH_SIZE) {
+      break
     }
   }
 
-  // 批量推送到 FetchWorker 队列
-  if (jobs.length > 0) {
-    await addFetchJobs(jobs)
-  }
-
-  // 发布进度
-  await publishJobStatus({
-    jobId,
-    sourceId,
-    type: 'crawl_discovery',
-    status: 'progress',
-    progress: {
-      current: jobs.length,
-      total: urlsToProcess.length,
-      queued: jobs.length
-    },
-    timestamp: Date.now()
-  })
-
-  return jobs.length
+  console.log(`[SiteCrawl] ${sourceId}: 共入队 ${totalQueued} 个抓取任务`)
+  return totalQueued
 }
 
 /**
