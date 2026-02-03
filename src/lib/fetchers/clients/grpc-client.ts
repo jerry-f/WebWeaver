@@ -8,6 +8,40 @@
 import * as grpc from '@grpc/grpc-js'
 import * as protoLoader from '@grpc/proto-loader'
 import path from 'path'
+import type {
+  FetchResponse,
+  FetchRawResponse,
+  HealthResponse,
+  Image as ProtoImage,
+  FetchOptions as ProtoFetchOptions,
+} from './scraper'
+
+// gRPC 服务客户端接口（proto-loader 动态加载）
+interface ScraperServiceClient extends grpc.Client {
+  FetchArticle(
+    request: { url: string; options?: Partial<ProtoFetchOptions> },
+    options: { deadline: Date },
+    callback: (err: grpc.ServiceError | null, response: FetchResponse) => void
+  ): grpc.ClientUnaryCall
+
+  FetchRaw(
+    request: { url: string; options?: Partial<ProtoFetchOptions> },
+    options: { deadline: Date },
+    callback: (err: grpc.ServiceError | null, response: FetchRawResponse) => void
+  ): grpc.ClientUnaryCall
+
+  HealthCheck(
+    request: Record<string, never>,
+    options: { deadline: Date },
+    callback: (err: grpc.ServiceError | null, response: HealthResponse) => void
+  ): grpc.ClientUnaryCall
+}
+
+interface ScraperProtoDefinition {
+  scraper: {
+    ScraperService: grpc.ServiceClientConstructor
+  }
+}
 
 /**
  * gRPC 客户端配置
@@ -102,7 +136,7 @@ const PROTO_PATH = path.join(
  * Go 抓取服务 gRPC 客户端
  */
 export class GoScraperGrpcClient {
-  private client: any
+  private client: ScraperServiceClient | null = null
   private connected: boolean = false
 
   constructor(config: GrpcClientConfig = {}) {
@@ -111,14 +145,14 @@ export class GoScraperGrpcClient {
     try {
       // 加载 proto 文件
       const packageDef = protoLoader.loadSync(PROTO_PATH, {
-        keepCase: true,
+        keepCase: false,
         longs: String,
         enums: String,
         defaults: true,
         oneofs: true
       })
 
-      const proto = grpc.loadPackageDefinition(packageDef) as any
+      const proto = grpc.loadPackageDefinition(packageDef) as unknown as ScraperProtoDefinition
 
       // 创建客户端
       this.client = new proto.scraper.ScraperService(
@@ -128,7 +162,7 @@ export class GoScraperGrpcClient {
           'grpc.max_receive_message_length': 50 * 1024 * 1024, // 50MB
           'grpc.max_send_message_length': 10 * 1024 * 1024 // 10MB
         }
-      )
+      ) as unknown as ScraperServiceClient
 
       this.connected = true
       console.log(`[GoScraperGrpc] Connected to ${address}`)
@@ -161,10 +195,10 @@ export class GoScraperGrpcClient {
         url,
         options: options
           ? {
-              timeout_ms: options.timeoutMs || 15000,
-              extract_fulltext: options.extractFulltext ?? true,
-              process_images: options.processImages ?? true,
-              image_proxy_base: options.imageProxyBase || '',
+              timeoutMs: options.timeoutMs || 15000,
+              extractFulltext: options.extractFulltext ?? true,
+              processImages: options.processImages ?? true,
+              imageProxyBase: options.imageProxyBase || '',
               headers: options.headers || {},
               strategy: options.strategy || 'auto',
               referer: options.referer || ''
@@ -175,10 +209,14 @@ export class GoScraperGrpcClient {
       const deadline = new Date()
       deadline.setSeconds(deadline.getSeconds() + 30)
 
+      if (!this.client) {
+        throw new Error('gRPC client not connected')
+      }
+
       this.client.FetchArticle(
         request,
         { deadline },
-        (err: Error | null, response: any) => {
+        (err: grpc.ServiceError | null, response: FetchResponse) => {
           if (err) {
             reject(err)
           } else {
@@ -201,15 +239,19 @@ export class GoScraperGrpcClient {
       const deadline = new Date()
       deadline.setSeconds(deadline.getSeconds() + 5)
 
-      this.client.HealthCheck({}, { deadline }, (err: Error | null, response: any) => {
+      if (!this.client) {
+        throw new Error('gRPC client not connected')
+      }
+
+      this.client.HealthCheck({}, { deadline }, (err: grpc.ServiceError | null, response: HealthResponse) => {
         if (err) {
           reject(err)
         } else {
           resolve({
             status: response.status,
-            maxConcurrent: response.max_concurrent,
+            maxConcurrent: response.maxConcurrent,
             available: response.available,
-            cycletlsEnabled: response.cycletls_enabled
+            cycletlsEnabled: response.cycletlsEnabled
           })
         }
       })
@@ -247,9 +289,9 @@ export class GoScraperGrpcClient {
         url,
         options: options
           ? {
-              timeout_ms: options.timeoutMs || 15000,
-              extract_fulltext: false,
-              process_images: false,
+              timeoutMs: options.timeoutMs || 15000,
+              extractFulltext: false,
+              processImages: false,
               headers: options.headers || {},
               strategy: options.strategy || 'auto',
               referer: options.referer || ''
@@ -260,10 +302,14 @@ export class GoScraperGrpcClient {
       const deadline = new Date()
       deadline.setSeconds(deadline.getSeconds() + 30)
 
+      if (!this.client) {
+        throw new Error('gRPC client not connected')
+      }
+
       this.client.FetchRaw(
         request,
         { deadline },
-        (err: Error | null, response: any) => {
+        (err: grpc.ServiceError | null, response: FetchRawResponse) => {
           if (err) {
             reject(err)
           } else {
@@ -279,7 +325,8 @@ export class GoScraperGrpcClient {
    */
   close(): void {
     if (this.client) {
-      grpc.closeClient(this.client)
+      this.client.close()
+      this.client = null
       this.connected = false
     }
   }
@@ -287,25 +334,25 @@ export class GoScraperGrpcClient {
   /**
    * 转换响应格式
    */
-  private transformResponse(response: any): GrpcFetchResponse {
+  private transformResponse(response: FetchResponse): GrpcFetchResponse {
     return {
       url: response.url || '',
-      finalUrl: response.final_url || '',
+      finalUrl: response.finalUrl || '',
       title: response.title || '',
       content: response.content || '',
-      textContent: response.text_content || '',
+      textContent: response.textContent || '',
       excerpt: response.excerpt || '',
       byline: response.byline || '',
-      siteName: response.site_name || '',
-      images: (response.images || []).map((img: any) => ({
-        originalUrl: img.original_url || '',
-        proxyUrl: img.proxy_url || '',
+      siteName: response.siteName || '',
+      images: (response.images || []).map((img: ProtoImage) => ({
+        originalUrl: img.originalUrl || '',
+        proxyUrl: img.proxyUrl || '',
         alt: img.alt || '',
-        isLazy: img.is_lazy || false
+        isLazy: img.isLazy || false
       })),
-      readingTime: response.reading_time || 0,
+      readingTime: response.readingTime || 0,
       strategy: response.strategy || '',
-      durationMs: parseInt(response.duration_ms || '0', 10),
+      durationMs: typeof response.durationMs === 'number' ? response.durationMs : parseInt(String(response.durationMs || '0'), 10),
       error: response.error || ''
     }
   }
@@ -313,15 +360,15 @@ export class GoScraperGrpcClient {
   /**
    * 转换原始抓取响应格式
    */
-  private transformRawResponse(response: any): GrpcRawResponse {
+  private transformRawResponse(response: FetchRawResponse): GrpcRawResponse {
     return {
       url: response.url || '',
-      finalUrl: response.final_url || '',
+      finalUrl: response.finalUrl || '',
       body: response.body || '',
-      contentType: response.content_type || '',
-      statusCode: response.status_code || 0,
+      contentType: response.contentType || '',
+      statusCode: response.statusCode || 0,
       strategy: response.strategy || '',
-      durationMs: parseInt(response.duration_ms || '0', 10),
+      durationMs: typeof response.durationMs === 'number' ? response.durationMs : parseInt(String(response.durationMs || '0'), 10),
       error: response.error || ''
     }
   }

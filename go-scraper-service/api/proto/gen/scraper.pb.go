@@ -21,6 +21,8 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// TIPS: 只需要维护者一套类型系统，即可保证go和ts 共用， 修改之后，最终要执行命令 `npm run proto:gen` 生成新的
+// 生成新的 go-scraper-service/api/proto/gen/scraper.pb.go 文件和 src/lib/fetchers/clients/scraper.ts 文件
 type Empty struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
