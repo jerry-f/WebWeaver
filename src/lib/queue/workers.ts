@@ -12,7 +12,6 @@ import {
   type SummaryJobData,
   type CredentialJobData,
   type SourceFetchJobData,
-  type CrawlDiscoveryJobData,
   addFetchJobs
 } from './queues'
 import { getUnifiedFetcher } from '../fetchers/unified-fetcher'
@@ -22,10 +21,9 @@ import { refreshExpiredCredentials, refreshCredential } from '../tasks/refresh-c
 import { queueArticleForSummary } from '../ai/queue'
 import { fetchRSS } from '../fetchers/rss'
 import { fetchScrape } from '../fetchers/scrape'
-import { startSiteCrawl, discoverPage, triggerContentFetch } from '../fetchers/sitecrawl'
-import { normalizeUrl } from '../utils/url-normalizer'
+import { startSiteCrawl } from '../fetchers/sitecrawl'
 import { calculateReadingTime } from '../utils/reading-time'
-import type { FetchedArticle, SourceConfig, SiteCrawlConfig } from '../fetchers/types'
+import type { FetchedArticle, SourceConfig } from '../fetchers/types'
 
 /**
  * Worker 配置
@@ -159,7 +157,6 @@ let fetchWorker: Worker<FetchJobData> | null = null
 let summaryWorker: Worker<SummaryJobData> | null = null
 let credentialWorker: Worker<CredentialJobData> | null = null
 let sourceFetchWorker: Worker<SourceFetchJobData> | null = null
-let crawlDiscoveryWorker: Worker<CrawlDiscoveryJobData> | null = null
 
 /**
  * 凭证刷新任务处理函数
@@ -392,117 +389,6 @@ async function processSourceFetchJob(job: Job<SourceFetchJobData>): Promise<void
 }
 
 /**
- * 全站爬取发现任务处理函数
- */
-async function processCrawlDiscoveryJob(job: Job<CrawlDiscoveryJobData>): Promise<void> {
-  const { jobId, sourceId, url, depth } = job.data
-
-  console.log(`[CrawlDiscoveryWorker] Processing: ${url} (depth: ${depth})`)
-
-  // 1. 获取源配置
-  const source = await prisma.source.findUnique({ where: { id: sourceId } })
-  if (!source) {
-    throw new Error('Source not found')
-  }
-
-  const config: SourceConfig = source.config ? JSON.parse(source.config) : {}
-  const siteCrawlConfig: SiteCrawlConfig = config.siteCrawl || {}
-  const maxUrls = siteCrawlConfig.maxUrls ?? 1000
-
-  // 2. 提前检查是否已达到 maxUrls 限制
-  const existingCount = await prisma.crawlUrl.count({ where: { sourceId } })
-  if (existingCount >= maxUrls) {
-    // 已达限制，直接标记完成并检查是否触发内容抓取
-    const normalized = normalizeUrl(url)
-    await prisma.crawlUrl.updateMany({
-      where: { sourceId, normalizedUrl: normalized },
-      data: { status: 'completed', crawledAt: new Date() }
-    })
-
-    // 检查是否所有任务都完成了
-    const pendingCount = await prisma.crawlUrl.count({
-      where: { sourceId, status: { in: ['pending', 'crawling'] } }
-    })
-
-    if (pendingCount === 0) {
-      console.log(`[CrawlDiscoveryWorker] maxUrls reached, triggering content fetch`)
-      await triggerContentFetch(sourceId, jobId)
-      await publishJobStatus({
-        jobId, sourceId, type: 'crawl_discovery', status: 'completed', timestamp: Date.now()
-      })
-    }
-    return
-  }
-
-  console.log(`[CrawlDiscoveryWorker] Processing: ${url} (depth: ${depth})`)
-
-  // 3. 更新 CrawlUrl 状态
-  const normalized = normalizeUrl(url)
-  await prisma.crawlUrl.updateMany({
-    where: { sourceId, normalizedUrl: normalized },
-    data: { status: 'crawling' }
-  })
-
-  // 4. 使用 DomainScheduler 限流
-  const domain = extractDomainFromUrl(url)
-  await domainScheduler.acquireWithWait(domain)
-
-  try {
-    // 5. 执行发现
-    const result = await discoverPage(sourceId, url, depth, siteCrawlConfig, jobId)
-
-    // 6. 更新状态
-    await prisma.crawlUrl.updateMany({
-      where: { sourceId, normalizedUrl: normalized },
-      data: {
-        status: 'completed',
-        crawledAt: new Date()
-      }
-    })
-
-    domainScheduler.reportSuccess(domain)
-
-    console.log(`[CrawlDiscoveryWorker] Discovered ${result.discovered} links, queued ${result.queued}`)
-
-    // 7. 检查是否发现阶段完成，触发内容抓取
-    const pendingDiscovery = await prisma.crawlUrl.count({
-      where: { sourceId, status: 'pending' }
-    })
-
-    const crawlingCount = await prisma.crawlUrl.count({
-      where: { sourceId, status: 'crawling' }
-    })
-
-    // 只有当没有 pending 和 crawling 的任务时，才触发内容抓取
-    if (pendingDiscovery === 0 && crawlingCount === 0) {
-      console.log(`[CrawlDiscoveryWorker] Discovery complete for ${sourceId}, triggering content fetch`)
-      await triggerContentFetch(sourceId, jobId)
-
-      // 发布完成状态
-      await publishJobStatus({
-        jobId,
-        sourceId,
-        type: 'crawl_discovery',
-        status: 'completed',
-        timestamp: Date.now()
-      })
-    }
-  } catch (error) {
-    domainScheduler.reportFailure(domain)
-
-    await prisma.crawlUrl.updateMany({
-      where: { sourceId, normalizedUrl: normalized },
-      data: { status: 'failed' }
-    })
-
-    console.error(`[CrawlDiscoveryWorker] Failed: ${url}`, error)
-    throw error
-  } finally {
-    domainScheduler.release(domain)
-  }
-}
-
-/**
  * 启动抓取 Worker
  */
 export function startFetchWorker(config: WorkerConfig = {}): Worker<FetchJobData> {
@@ -641,42 +527,6 @@ export function startSourceFetchWorker(config: WorkerConfig = {}): Worker<Source
 }
 
 /**
- * 启动全站爬取发现 Worker
- */
-export function startCrawlDiscoveryWorker(config: WorkerConfig = {}): Worker<CrawlDiscoveryJobData> {
-  const cfg = { ...DEFAULT_CONFIG, ...config }
-
-  if (crawlDiscoveryWorker) {
-    return crawlDiscoveryWorker
-  }
-
-  crawlDiscoveryWorker = new Worker<CrawlDiscoveryJobData>(
-    QUEUE_NAMES.CRAWL_DISCOVERY,
-    processCrawlDiscoveryJob,
-    {
-      connection: getRedisConnection(),
-      concurrency: cfg.concurrency
-    }
-  )
-
-  crawlDiscoveryWorker.on('completed', (job) => {
-    console.log(`[CrawlDiscoveryWorker] Job ${job.id} completed`)
-  })
-
-  crawlDiscoveryWorker.on('failed', (job, error) => {
-    console.error(`[CrawlDiscoveryWorker] Job ${job?.id} failed:`, error.message)
-  })
-
-  crawlDiscoveryWorker.on('error', (error) => {
-    console.error('[CrawlDiscoveryWorker] Error:', error)
-  })
-
-  console.log(`[CrawlDiscoveryWorker] Started with concurrency ${cfg.concurrency}`)
-
-  return crawlDiscoveryWorker
-}
-
-/**
  * 启动所有 Worker
  */
 export function startAllWorkers(config: WorkerConfig = {}): void {
@@ -684,7 +534,6 @@ export function startAllWorkers(config: WorkerConfig = {}): void {
   startSummaryWorker(config)
   startCredentialWorker(config)
   startSourceFetchWorker(config)
-  startCrawlDiscoveryWorker(config)
 }
 
 /**
@@ -706,10 +555,6 @@ export async function stopAllWorkers(): Promise<void> {
   if (sourceFetchWorker) {
     await sourceFetchWorker.close()
     sourceFetchWorker = null
-  }
-  if (crawlDiscoveryWorker) {
-    await crawlDiscoveryWorker.close()
-    crawlDiscoveryWorker = null
   }
   console.log('[Workers] All workers stopped')
 }

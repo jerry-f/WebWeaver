@@ -196,6 +196,15 @@ export interface SiteCrawlConfig {
   sameDomainOnly?: boolean
 
   /**
+   * 是否限制种子路径前缀
+   * 默认: false
+   * 当为 true 时，只爬取以种子 URL 路径为前缀的页面
+   * 例如种子 URL 为 https://example.com/docs/zh-CN
+   * 则只爬取 https://example.com/docs/zh-CN/* 的页面
+   */
+  seedPathOnly?: boolean
+
+  /**
    * 允许的子域名（当 sameDomainOnly=true 时）
    * 例如: ["docs", "blog"] 表示允许 docs.example.com, blog.example.com
    */

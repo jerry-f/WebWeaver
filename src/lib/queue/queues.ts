@@ -63,26 +63,11 @@ export interface SourceFetchJobData {
 }
 
 /**
- * 全站爬取发现任务数据
- */
-export interface CrawlDiscoveryJobData {
-  /** 任务 ID，用于状态追踪 */
-  jobId: string
-  /** 信息源 ID */
-  sourceId: string
-  /** 要爬取的 URL */
-  url: string
-  /** 当前深度 */
-  depth: number
-}
-
-/**
  * 队列名称
  */
 export const QUEUE_NAMES = {
   // 第一层：源级别任务
   SOURCE_FETCH: 'newsflow-source-fetch',
-  CRAWL_DISCOVERY: 'newsflow-crawl-discovery',
   // 第二层：文章级别任务
   FETCH: 'newsflow-fetch',
   SUMMARY: 'newsflow-summary',
@@ -129,11 +114,6 @@ let credentialQueue: Queue<CredentialJobData> | null = null
  * 源抓取任务队列
  */
 let sourceFetchQueue: Queue<SourceFetchJobData> | null = null
-
-/**
- * 全站爬取发现任务队列
- */
-let crawlDiscoveryQueue: Queue<CrawlDiscoveryJobData> | null = null
 
 /**
  * 获取抓取任务队列
@@ -202,33 +182,6 @@ export function getSourceFetchQueue(): Queue<SourceFetchJobData> {
 }
 
 /**
- * 获取全站爬取发现队列
- */
-export function getCrawlDiscoveryQueue(): Queue<CrawlDiscoveryJobData> {
-  if (!crawlDiscoveryQueue) {
-    crawlDiscoveryQueue = new Queue<CrawlDiscoveryJobData>(QUEUE_NAMES.CRAWL_DISCOVERY, {
-      connection: getRedisConnection(),
-      defaultJobOptions: {
-        attempts: 3,
-        backoff: {
-          type: 'exponential' as const,
-          delay: 2000
-        },
-        removeOnComplete: {
-          count: 500,
-          age: 3600
-        },
-        removeOnFail: {
-          count: 1000,
-          age: 86400
-        }
-      }
-    })
-  }
-  return crawlDiscoveryQueue
-}
-
-/**
  * 添加抓取任务
  */
 export async function addFetchJob(data: FetchJobData): Promise<Job<FetchJobData>> {
@@ -283,34 +236,6 @@ export async function addSourceFetchJob(data: SourceFetchJobData): Promise<Job<S
   return queue.add(`source_${data.sourceId}`, data, {
     jobId: data.jobId
   })
-}
-
-/**
- * 添加全站爬取发现任务
- */
-export async function addCrawlDiscoveryJob(data: CrawlDiscoveryJobData): Promise<Job<CrawlDiscoveryJobData>> {
-  const queue = getCrawlDiscoveryQueue()
-
-  return queue.add(`crawl_${data.sourceId}_${data.depth}`, data, {
-    priority: 10 - data.depth // 浅层优先
-  })
-}
-
-/**
- * 批量添加全站爬取发现任务
- */
-export async function addCrawlDiscoveryJobs(jobs: CrawlDiscoveryJobData[]): Promise<Job<CrawlDiscoveryJobData>[]> {
-  const queue = getCrawlDiscoveryQueue()
-
-  const bulkJobs = jobs.map(data => ({
-    name: `crawl_${data.sourceId}_${data.depth}`,
-    data,
-    opts: {
-      priority: 10 - data.depth // 浅层优先
-    }
-  }))
-
-  return queue.addBulk(bulkJobs)
 }
 
 /**

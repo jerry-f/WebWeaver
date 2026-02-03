@@ -17,8 +17,9 @@ import {
   isCrawlableUrl,
   toAbsoluteUrl
 } from '../utils/url-normalizer'
-import { addCrawlDiscoveryJobs, addFetchJobs } from '../queue/queues'
+import { addFetchJobs } from '../queue/queues'
 import { publishJobStatus } from '../queue/redis'
+import { domainScheduler, extractDomainFromUrl } from '../scheduler/domain-scheduler'
 import type { SiteCrawlConfig } from './types'
 
 /**
@@ -39,12 +40,14 @@ export interface DiscoveredLink {
  * @param html - 页面 HTML
  * @param baseUrl - 基础 URL（用于转换相对路径）
  * @param config - 爬取配置
+ * @param seedUrl - 种子 URL（用于 seedPathOnly 过滤）
  * @returns 发现的链接列表
  */
 export function extractLinks(
   html: string,
   baseUrl: string,
-  config: SiteCrawlConfig
+  config: SiteCrawlConfig,
+  seedUrl?: string
 ): DiscoveredLink[] {
   const dom = new JSDOM(html, { url: baseUrl })
   const document = dom.window.document
@@ -61,6 +64,18 @@ export function extractLinks(
 
   const links: DiscoveredLink[] = []
   const seen = new Set<string>()
+
+  // 预计算种子路径前缀（用于 seedPathOnly 过滤）
+  let seedPathPrefix: string | null = null
+  if (config.seedPathOnly && seedUrl) {
+    try {
+      const seedUrlObj = new URL(seedUrl)
+      // 路径前缀：包含完整路径（去掉末尾的 / 以便统一比较）
+      seedPathPrefix = seedUrlObj.origin + seedUrlObj.pathname.replace(/\/$/, '')
+    } catch {
+      // 无效 URL，跳过 seedPathOnly 过滤
+    }
+  }
 
   anchors.forEach((anchor: Element) => {
     const href = (anchor as HTMLAnchorElement).href
@@ -83,6 +98,20 @@ export function extractLinks(
     // 同域名检查
     if (config.sameDomainOnly !== false) {
       if (!isSameDomain(absoluteUrl, baseUrl, config.allowedSubdomains)) {
+        return
+      }
+    }
+
+    // 种子路径前缀检查
+    if (seedPathPrefix) {
+      try {
+        const urlObj = new URL(absoluteUrl)
+        const urlPath = urlObj.origin + urlObj.pathname.replace(/\/$/, '')
+        // URL 必须以种子路径为前缀
+        if (!urlPath.startsWith(seedPathPrefix)) {
+          return
+        }
+      } catch {
         return
       }
     }
@@ -122,118 +151,166 @@ export function extractLinks(
 }
 
 /**
- * 发现单个页面的链接
+ * 抓取单个页面并提取链接
+ *
+ * @param url - 要爬取的 URL
+ * @param config - 爬取配置
+ * @param seedUrl - 种子 URL（用于 seedPathOnly 过滤）
+ * @returns 发现的链接列表，失败返回空数组
+ */
+async function fetchAndExtractLinks(
+  url: string,
+  config: SiteCrawlConfig,
+  seedUrl: string
+): Promise<DiscoveredLink[]> {
+  const domain = extractDomainFromUrl(url)
+
+  // 使用 DomainScheduler 限流，避免触发封锁
+  await domainScheduler.acquireWithWait(domain)
+
+  try {
+    const fetcher = getUnifiedFetcher()
+    const result = await fetcher.fetchRaw(url, {
+      timeout: 30000
+    })
+
+    if (!result.success) {
+      console.warn(`[SiteCrawl] 抓取失败: ${url} - ${result.error}`)
+      domainScheduler.reportFailure(domain)
+      return []
+    }
+
+    domainScheduler.reportSuccess(domain)
+    const html = result.body || ''
+    return extractLinks(html, result.finalUrl || url, config, seedUrl)
+  } finally {
+    domainScheduler.release(domain)
+  }
+}
+
+/**
+ * 执行全站 BFS（广度优先） 发现（在单个任务内完成）
+ *
+ * 使用 BFS 循环替代队列递归，简化逻辑并避免状态不一致问题
  *
  * @param sourceId - 信息源 ID
- * @param url - 要爬取的 URL
- * @param currentDepth - 当前深度
+ * @param seedUrl - 种子 URL
  * @param config - 爬取配置
  * @param jobId - 任务 ID（用于状态通知）
- * @returns 发现和入队的链接数量
+ * @returns 发现的总 URL 数量
  */
-export async function discoverPage(
+export async function discoverSite(
   sourceId: string,
-  url: string,
-  currentDepth: number,
+  seedUrl: string,
   config: SiteCrawlConfig,
   jobId: string
-): Promise<{ discovered: number; queued: number }> {
+): Promise<{ totalDiscovered: number; totalProcessed: number }> {
   const maxDepth = config.maxDepth ?? 3
   const maxUrls = config.maxUrls ?? 1000
 
-  // 检查是否超过最大 URL 数
-  const existingCount = await prisma.crawlUrl.count({
-    where: { sourceId }
-  })
+  // 使用内存 Set 追踪已处理的 URL（避免重复）
+  const processedUrls = new Set<string>()
+  // BFS 队列：{ url, normalizedUrl, depth }
+  const queue: Array<{ url: string; normalizedUrl: string; depth: number }> = []
 
-  if (existingCount >= maxUrls) {
-    console.log(`[SiteCrawl] ${sourceId}: 已达到最大 URL 数 ${maxUrls}`)
-    return { discovered: 0, queued: 0 }
-  }
+  // 初始化种子 URL
+  const seedNormalized = normalizeUrl(seedUrl)
+  processedUrls.add(seedNormalized)
+  queue.push({ url: seedUrl, normalizedUrl: seedNormalized, depth: 0 })
 
-  // 抓取页面 - 使用 fetchRaw 获取原始 HTML（不经过 Readability 处理）
-  const fetcher = getUnifiedFetcher()
-  const result = await fetcher.fetchRaw(url, {
-    sourceId,
-    timeout: 30000
-  })
+  let totalDiscovered = 0
+  let totalProcessed = 0
 
-  if (!result.success) {
-    console.warn(`[SiteCrawl] 抓取失败: ${url} - ${result.error}`)
-    return { discovered: 0, queued: 0 }
-  }
+  console.log(`[SiteCrawl] 开始 BFS 发现: ${seedUrl}, maxDepth=${maxDepth}, maxUrls=${maxUrls}`)
 
-  // 提取链接
-  const html = result.body || ''
-  const links = extractLinks(html, result.finalUrl || url, config)
+  // BFS 循环
+  while (queue.length > 0 && processedUrls.size < maxUrls) {
+    const { url, normalizedUrl, depth } = queue.shift()!
+    totalProcessed++
 
-  // 限制新增数量，避免超过 maxUrls
-  const remainingSlots = maxUrls - existingCount
-  const linksToInsert = links.slice(0, remainingSlots)
+    // 抓取并提取链接
+    const links = await fetchAndExtractLinks(url, config, seedUrl)
 
-  if (linksToInsert.length === 0) {
-    return { discovered: 0, queued: 0 }
-  }
-
-  // 批量插入 - 使用 createMany 跳过重复项
-  // 注意：SQLite 的 createMany 不支持 skipDuplicates，需要用事务处理
-  const insertData = linksToInsert.map(link => ({
-    sourceId,
-    url: link.url,
-    normalizedUrl: link.normalizedUrl,
-    depth: currentDepth + 1,
-    title: link.title,
-    parentUrl: url,
-    status: 'pending' as const
-  }))
-
-  // 使用事务批量插入，忽略重复
-  let discovered = 0
-  const newLinks: DiscoveredLink[] = []
-
-  // 先查询已存在的 URL
-  const existingUrls = await prisma.crawlUrl.findMany({
-    where: {
-      sourceId,
-      normalizedUrl: { in: linksToInsert.map(l => l.normalizedUrl) }
-    },
-    select: { normalizedUrl: true }
-  })
-  const existingSet = new Set(existingUrls.map(u => u.normalizedUrl))
-
-  // 过滤出真正需要插入的
-  const toInsert = insertData.filter(d => !existingSet.has(d.normalizedUrl))
-
-  if (toInsert.length > 0) {
-    // 批量插入 - 已在上面过滤掉重复项
-    await prisma.crawlUrl.createMany({
-      data: toInsert
+    // 更新为 completed
+    await prisma.crawlUrl.updateMany({
+      where: { sourceId, normalizedUrl },
+      data: { status: 'completed', crawledAt: new Date() }
     })
-    discovered = toInsert.length
-    newLinks.push(...linksToInsert.filter(l => !existingSet.has(l.normalizedUrl)))
+
+    // 只有未达到最大深度时才处理新链接
+    if (depth >= maxDepth) {
+      continue
+    }
+
+    // 过滤已处理的链接
+    const newLinks = links.filter(l => !processedUrls.has(l.normalizedUrl))
+    if (newLinks.length === 0) {
+      continue
+    }
+
+    // 限制总数不超过 maxUrls
+    const remainingSlots = maxUrls - processedUrls.size
+    const linksToAdd = newLinks.slice(0, remainingSlots)
+
+    // 批量插入 DB（先查询去重）
+    const existingUrls = await prisma.crawlUrl.findMany({
+      where: {
+        sourceId,
+        normalizedUrl: { in: linksToAdd.map(l => l.normalizedUrl) }
+      },
+      select: { normalizedUrl: true }
+    })
+    const existingSet = new Set(existingUrls.map(u => u.normalizedUrl))
+
+    const toInsert = linksToAdd
+      .filter(l => !existingSet.has(l.normalizedUrl))
+      .map(link => ({
+        sourceId,
+        url: link.url,
+        normalizedUrl: link.normalizedUrl,
+        depth: depth + 1,
+        title: link.title,
+        parentUrl: url,
+        status: 'completed' as const  // 直接标记为 completed，避免 pending 状态遗留
+      }))
+
+    if (toInsert.length > 0) {
+      await prisma.crawlUrl.createMany({ data: toInsert })
+      totalDiscovered += toInsert.length
+
+      // 加入 BFS 队列继续发现
+      for (const item of toInsert) {
+        processedUrls.add(item.normalizedUrl)
+        queue.push({ url: item.url, normalizedUrl: item.normalizedUrl, depth: depth + 1 })
+      }
+    }
+
+    // 每处理 10 个 URL 发布一次进度
+    if (totalProcessed % 10 === 0) {
+      await publishJobStatus({
+        jobId,
+        sourceId,
+        type: 'crawl_discovery',
+        status: 'progress',
+        progress: {
+          current: totalProcessed,
+          total: processedUrls.size,
+          queued: totalDiscovered
+        },
+        timestamp: Date.now()
+      })
+    }
   }
 
-  // 继续发现（深度控制）- 只有未达到最大深度才继续
-  let queued = 0
-  if (currentDepth < maxDepth && newLinks.length > 0) {
-    const toDiscover = newLinks.map(l => ({
-      jobId,
-      sourceId,
-      url: l.url,
-      depth: currentDepth + 1
-    }))
+  console.log(`[SiteCrawl] BFS 发现完成: processed=${totalProcessed}, discovered=${totalDiscovered}`)
 
-    await addCrawlDiscoveryJobs(toDiscover)
-    queued = toDiscover.length
-  }
-
-  return { discovered, queued }
+  return { totalDiscovered, totalProcessed }
 }
 
 /**
  * 启动全站爬取
  *
- * 入口函数，创建种子任务
+ * 入口函数，执行 BFS 发现并触发内容抓取
  *
  * @param sourceId - 信息源 ID
  * @param jobId - 任务 ID
@@ -273,16 +350,6 @@ export async function startSiteCrawl(
     // 已存在，继续
   }
 
-  // 推送发现任务
-  await addCrawlDiscoveryJobs([
-    {
-      jobId,
-      sourceId,
-      url: source.url,
-      depth: 0
-    }
-  ])
-
   // 发布开始状态
   await publishJobStatus({
     jobId,
@@ -292,7 +359,34 @@ export async function startSiteCrawl(
     timestamp: Date.now()
   })
 
-  return { success: true, message: '爬取任务已启动' }
+  // 执行 BFS 发现（同步完成，不再使用队列递归）
+  const { totalDiscovered, totalProcessed } = await discoverSite(
+    sourceId,
+    source.url,
+    config,
+    jobId
+  )
+
+  console.log(`[SiteCrawl] 发现完成: ${totalProcessed} processed, ${totalDiscovered} discovered`)
+
+  // 触发内容抓取
+  const fetchedCount = await triggerContentFetch(sourceId, jobId)
+
+  // 发布完成状态
+  await publishJobStatus({
+    jobId,
+    sourceId,
+    type: 'crawl_discovery',
+    status: 'completed',
+    progress: {
+      current: totalProcessed,
+      total: totalDiscovered,
+      queued: fetchedCount
+    },
+    timestamp: Date.now()
+  })
+
+  return { success: true, message: `发现 ${totalDiscovered} 个 URL，已入队 ${fetchedCount} 个抓取任务` }
 }
 
 /**
