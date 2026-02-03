@@ -89,9 +89,15 @@ func NewSanitizer() *Sanitizer {
 	// 允许链接的基本属性
 	policy.AllowAttrs("href", "target", "rel").OnElements("a")
 
-	// 禁止相对 URL，只允许绝对 URL（http://, https://, mailto: 等）
-	// 防止路径遍历攻击如 href="../../sensitive/file"
-	policy.AllowRelativeURLs(false)
+	// 允许相对 URL
+	// 注意：图片 URL 已在 processor.ProcessImages 中转换为绝对路径
+	// 链接 URL 保留相对路径是安全的（由浏览器解析）
+	// 之前设置为 false 会导致某些边缘情况下的 URL 被错误移除
+	policy.AllowRelativeURLs(true)
+
+	// 允许的 URL schemes
+	// 必须显式指定，否则 bluemonday 可能会移除不认识的 URL
+	policy.AllowURLSchemes("http", "https", "mailto", "data")
 
 	// 为所有外部链接（完全限定的 URL）添加 target="_blank"
 	// 这样外部链接会在新标签页打开，与 Node.js 端行为一致
@@ -111,12 +117,25 @@ func NewSanitizer() *Sanitizer {
 	// 图片属性配置
 	// ============================================================
 
-	// 允许图片的常用属性
-	// - src, srcset, sizes: 图片源和响应式配置
+	// 允许图片元素
+	policy.AllowElements("img")
+
+	// 允许图片的 URL 属性（src, srcset）
+	// 必须使用 AllowURLSchemeWithCustomPolicy 或 AllowAttrs + AllowStandardURLs 配合
+	// 单独使用 AllowAttrs("src") 不会保留 URL 值
+	policy.AllowAttrs("src").OnElements("img")
+	policy.AllowAttrs("srcset").OnElements("img")
+
+	// 允许图片的非 URL 属性
+	// - sizes: 响应式配置
 	// - alt: 无障碍访问必需
 	// - width, height: 防止布局偏移 (CLS)
 	// - loading, decoding: 懒加载优化（由 processor/image.go 设置）
-	policy.AllowAttrs("src", "srcset", "sizes", "alt", "width", "height", "loading", "decoding").OnElements("img")
+	policy.AllowAttrs("sizes", "alt", "width", "height", "loading", "decoding").OnElements("img")
+
+	// 允许标准 URL（确保 src 等 URL 属性不被移除）
+	// 这会应用到所有包含 URL 的属性（href, src, srcset 等）
+	policy.AllowStandardURLs()
 
 	// ============================================================
 	// 表格属性配置
