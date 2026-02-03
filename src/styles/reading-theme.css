@@ -1,0 +1,392 @@
+/* ================================
+   阅读主题系统
+   ================================ */
+
+/* 阅读主题容器基础样式 */
+.reading-theme-container {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background-color: var(--reading-bg);
+  color: var(--reading-text);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* 默认主题 - 继承系统变量 */
+[data-reading-theme="default"] {
+  --reading-bg: hsl(var(--card));
+  --reading-text: hsl(var(--foreground));
+  --reading-heading: hsl(var(--foreground));
+  --reading-link: hsl(var(--primary));
+  --reading-link-hover: hsl(var(--primary) / 0.8);
+  --reading-border: hsl(var(--border));
+  --reading-muted: hsl(var(--muted-foreground));
+  --reading-accent: hsl(var(--accent));
+  --reading-code-bg: hsl(var(--muted));
+  --reading-blockquote-border: hsl(var(--primary));
+  --reading-blockquote-bg: hsl(var(--muted) / 0.5);
+}
+
+/* 羊皮纸主题 */
+[data-reading-theme="sepia"] {
+  --reading-bg: #f4ecd8;
+  --reading-text: #5c4b37;
+  --reading-heading: #3d2914;
+  --reading-link: #8b5a2b;
+  --reading-link-hover: #a0522d;
+  --reading-border: #d4c4a8;
+  --reading-muted: #7a6b5a;
+  --reading-accent: #a0522d;
+  --reading-code-bg: #e8dcc8;
+  --reading-blockquote-border: #8b5a2b;
+  --reading-blockquote-bg: #ebe3d3;
+}
+
+/* 护眼绿主题 */
+[data-reading-theme="eyecare"] {
+  --reading-bg: #c7e6c1;
+  --reading-text: #2d4a2d;
+  --reading-heading: #1a3a1a;
+  --reading-link: #2e7d32;
+  --reading-link-hover: #388e3c;
+  --reading-border: #a8d4a2;
+  --reading-muted: #4a6b4a;
+  --reading-accent: #3a6b35;
+  --reading-code-bg: #b8d8b2;
+  --reading-blockquote-border: #3a6b35;
+  --reading-blockquote-bg: #d4e8d0;
+}
+
+/* 夜间蓝主题 */
+[data-reading-theme="nightblue"] {
+  --reading-bg: #1a1f2e;
+  --reading-text: #b8c5d6;
+  --reading-heading: #d4e0ed;
+  --reading-link: #6fa8dc;
+  --reading-link-hover: #8ab8e6;
+  --reading-border: #2a3548;
+  --reading-muted: #8899aa;
+  --reading-accent: #5c8cc7;
+  --reading-code-bg: #242a3d;
+  --reading-blockquote-border: #5c8cc7;
+  --reading-blockquote-bg: #222838;
+}
+
+/* 纸质白主题 */
+[data-reading-theme="paper"] {
+  --reading-bg: #fefefe;
+  --reading-text: #1a1a1a;
+  --reading-heading: #000000;
+  --reading-link: #0066cc;
+  --reading-link-hover: #0055aa;
+  --reading-border: #e5e5e5;
+  --reading-muted: #666666;
+  --reading-accent: #333333;
+  --reading-code-bg: #f5f5f5;
+  --reading-blockquote-border: #cccccc;
+  --reading-blockquote-bg: #fafafa;
+}
+
+/* 暖夜主题 */
+[data-reading-theme="warmnight"] {
+  --reading-bg: #2b2420;
+  --reading-text: #e8dcd0;
+  --reading-heading: #f5ebe0;
+  --reading-link: #e6a86c;
+  --reading-link-hover: #f0b87c;
+  --reading-border: #3d342e;
+  --reading-muted: #a89888;
+  --reading-accent: #d4a574;
+  --reading-code-bg: #362e28;
+  --reading-blockquote-border: #d4a574;
+  --reading-blockquote-bg: #322a24;
+}
+
+/* ================================
+   Prose 样式覆盖（阅读主题专用）
+   ================================ */
+
+.reading-theme-container .prose {
+  --tw-prose-body: var(--reading-text);
+  --tw-prose-headings: var(--reading-heading);
+  --tw-prose-links: var(--reading-link);
+  --tw-prose-bold: var(--reading-heading);
+  --tw-prose-code: var(--reading-text);
+  --tw-prose-quotes: var(--reading-muted);
+  --tw-prose-quote-borders: var(--reading-blockquote-border);
+
+  /* 基础排版 */
+  font-size: 1.0625rem;
+  line-height: 1.8;
+  letter-spacing: 0.01em;
+}
+
+/* 标题样式 */
+.reading-theme-container .prose h1,
+.reading-theme-container .prose h2,
+.reading-theme-container .prose h3,
+.reading-theme-container .prose h4,
+.reading-theme-container .prose h5,
+.reading-theme-container .prose h6 {
+  color: var(--reading-heading);
+  font-weight: 600;
+  line-height: 1.4;
+  margin-top: 2em;
+  margin-bottom: 0.75em;
+}
+
+.reading-theme-container .prose h1 {
+  font-size: 1.875rem;
+  margin-top: 0;
+}
+
+.reading-theme-container .prose h2 {
+  font-size: 1.5rem;
+  padding-bottom: 0.5em;
+  border-bottom: 1px solid var(--reading-border);
+}
+
+.reading-theme-container .prose h3 {
+  font-size: 1.25rem;
+}
+
+.reading-theme-container .prose h4 {
+  font-size: 1.125rem;
+}
+
+/* 段落样式 */
+.reading-theme-container .prose p {
+  color: var(--reading-text);
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+}
+
+.reading-theme-container .prose p:first-child {
+  margin-top: 0;
+}
+
+/* 列表样式 */
+.reading-theme-container .prose ul,
+.reading-theme-container .prose ol {
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+  padding-left: 1.5em;
+}
+
+.reading-theme-container .prose li {
+  color: var(--reading-text);
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+.reading-theme-container .prose li::marker {
+  color: var(--reading-muted);
+}
+
+.reading-theme-container .prose ul > li {
+  padding-left: 0.375em;
+}
+
+.reading-theme-container .prose ol > li {
+  padding-left: 0.375em;
+}
+
+/* 嵌套列表 */
+.reading-theme-container .prose li ul,
+.reading-theme-container .prose li ol {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+}
+
+/* 表格样式 */
+.reading-theme-container .prose table {
+  width: 100%;
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+  border-collapse: collapse;
+}
+
+.reading-theme-container .prose th {
+  color: var(--reading-heading);
+  font-weight: 600;
+  padding: 0.75em 1em;
+  background-color: var(--reading-code-bg);
+  border: 1px solid var(--reading-border);
+  text-align: left;
+}
+
+.reading-theme-container .prose td {
+  color: var(--reading-text);
+  padding: 0.75em 1em;
+  border: 1px solid var(--reading-border);
+}
+
+.reading-theme-container .prose tbody tr:nth-child(even) {
+  background-color: color-mix(in srgb, var(--reading-code-bg) 50%, transparent);
+}
+
+/* 链接样式 */
+.reading-theme-container .prose a {
+  color: var(--reading-link);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+  transition: border-color 0.2s ease;
+}
+
+.reading-theme-container .prose a:hover {
+  color: var(--reading-link-hover);
+  border-bottom-color: var(--reading-link-hover);
+}
+
+/* 行内代码样式 */
+.reading-theme-container .prose code {
+  color: var(--reading-text);
+  background-color: var(--reading-code-bg);
+  padding: 0.2em 0.4em;
+  border-radius: 0.25rem;
+  font-size: 0.875em;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.reading-theme-container .prose code::before,
+.reading-theme-container .prose code::after {
+  content: '';
+}
+
+/* 代码块样式 */
+.reading-theme-container .prose pre {
+  background-color: var(--reading-code-bg);
+  border: 1px solid var(--reading-border);
+  border-radius: 0.5rem;
+  padding: 1em 1.25em;
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+  overflow-x: auto;
+}
+
+.reading-theme-container .prose pre code {
+  background-color: transparent;
+  padding: 0;
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+
+/* 引用块样式 */
+.reading-theme-container .prose blockquote {
+  border-left: 4px solid var(--reading-blockquote-border);
+  background-color: var(--reading-blockquote-bg);
+  padding: 1em 1.25em;
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+  border-radius: 0 0.5rem 0.5rem 0;
+  font-style: italic;
+}
+
+.reading-theme-container .prose blockquote p {
+  color: var(--reading-muted);
+  margin: 0;
+}
+
+.reading-theme-container .prose blockquote p:not(:last-child) {
+  margin-bottom: 0.75em;
+}
+
+/* 粗体和强调 */
+.reading-theme-container .prose strong {
+  color: var(--reading-heading);
+  font-weight: 600;
+}
+
+.reading-theme-container .prose em {
+  font-style: italic;
+}
+
+/* 分隔线 */
+.reading-theme-container .prose hr {
+  border: none;
+  border-top: 1px solid var(--reading-border);
+  margin-top: 2.5em;
+  margin-bottom: 2.5em;
+}
+
+/* 图片样式 */
+.reading-theme-container .prose img {
+  border-radius: 0.5rem;
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+  max-width: 100%;
+  height: auto;
+}
+
+.reading-theme-container .prose figure {
+  margin-top: 1.5em;
+  margin-bottom: 1.5em;
+}
+
+.reading-theme-container .prose figcaption {
+  color: var(--reading-muted);
+  font-size: 0.875rem;
+  text-align: center;
+  margin-top: 0.75em;
+}
+
+/* 定义列表 */
+.reading-theme-container .prose dl {
+  margin-top: 1.25em;
+  margin-bottom: 1.25em;
+}
+
+.reading-theme-container .prose dt {
+  color: var(--reading-heading);
+  font-weight: 600;
+  margin-top: 1em;
+}
+
+.reading-theme-container .prose dd {
+  margin-left: 1.5em;
+  margin-top: 0.25em;
+}
+
+/* 缩写 */
+.reading-theme-container .prose abbr {
+  text-decoration: underline dotted;
+  cursor: help;
+}
+
+/* 删除线 */
+.reading-theme-container .prose del {
+  color: var(--reading-muted);
+  text-decoration: line-through;
+}
+
+/* 上下标 */
+.reading-theme-container .prose sub,
+.reading-theme-container .prose sup {
+  font-size: 0.75em;
+}
+
+/* 键盘按键 */
+.reading-theme-container .prose kbd {
+  background-color: var(--reading-code-bg);
+  border: 1px solid var(--reading-border);
+  border-radius: 0.25rem;
+  padding: 0.15em 0.4em;
+  font-size: 0.875em;
+  font-family: inherit;
+  box-shadow: 0 1px 0 var(--reading-border);
+}
+
+/* 阅读主题工具栏样式覆盖 */
+.reading-theme-container .reading-toolbar {
+  background-color: color-mix(in srgb, var(--reading-bg) 80%, transparent);
+  border-color: var(--reading-border);
+}
+
+/* AI 摘要区块样式 */
+.reading-theme-container .ai-summary {
+  background-color: color-mix(in srgb, var(--reading-accent) 5%, var(--reading-bg));
+  border-color: color-mix(in srgb, var(--reading-accent) 20%, transparent);
+}
