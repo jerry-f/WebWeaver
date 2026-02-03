@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { ExternalLink, Loader2, Sparkles } from 'lucide-react'
 
@@ -37,6 +38,73 @@ export default function ArticleContent({
       minute: '2-digit'
     })
   }
+
+  // 为代码块添加复制按钮
+  const contentRef = useRef<HTMLDivElement>(null)
+
+  // 处理 HTML，为 pre 标签添加包装器和复制按钮
+  const processedContent = (content || summary || '<p class="text-muted-foreground">暂无内容</p>')
+    .replace(/<pre([^>]*)>/g, `<div class="code-block-wrapper"><button class="code-copy-btn" type="button" title="复制代码"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button><pre$1>`)
+    .replace(/<\/pre>/g, '</pre></div>')
+
+  // 事件代理处理复制按钮点击
+  useEffect(() => {
+    const container = contentRef.current
+    if (!container) return
+
+    // 复制文本到剪贴板（兼容非 HTTPS 环境）
+    const copyToClipboard = async (text: string): Promise<boolean> => {
+      // 优先使用现代 API
+      if (navigator.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(text)
+          return true
+        } catch {
+          // 继续尝试 fallback
+        }
+      }
+      // Fallback: 使用 execCommand
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.left = '-9999px'
+      document.body.appendChild(textarea)
+      textarea.select()
+      try {
+        document.execCommand('copy')
+        return true
+      } catch {
+        return false
+      } finally {
+        document.body.removeChild(textarea)
+      }
+    }
+
+    const handleClick = async (e: MouseEvent) => {
+      const target = e.target as HTMLElement
+      const btn = target.closest('.code-copy-btn') as HTMLButtonElement
+      if (!btn) return
+
+      const wrapper = btn.closest('.code-block-wrapper')
+      const pre = wrapper?.querySelector('pre')
+      const code = pre?.querySelector('code')?.textContent || pre?.textContent || ''
+
+      const success = await copyToClipboard(code)
+      if (success) {
+        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>`
+        btn.classList.add('copied')
+        setTimeout(() => {
+          btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`
+          btn.classList.remove('copied')
+        }, 2000)
+      } else {
+        console.error('复制失败')
+      }
+    }
+
+    container.addEventListener('click', handleClick)
+    return () => container.removeEventListener('click', handleClick)
+  }, [])
 
   return (
     <article className="flex-1 overflow-auto" style={{ backgroundColor: 'var(--reading-bg)' }}>
@@ -103,6 +171,7 @@ export default function ArticleContent({
 
         {/* 正文内容 */}
         <div
+          ref={contentRef}
           className="prose prose-neutral dark:prose-invert max-w-none
             prose-headings:font-serif prose-headings:text-foreground
             prose-p:text-foreground prose-p:leading-relaxed
@@ -113,7 +182,7 @@ export default function ArticleContent({
             prose-blockquote:border-l-primary prose-blockquote:text-muted-foreground
             prose-img:rounded-lg"
           dangerouslySetInnerHTML={{
-            __html: content || summary || '<p class="text-muted-foreground">暂无内容</p>'
+            __html: processedContent
           }}
         />
 

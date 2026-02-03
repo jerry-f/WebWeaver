@@ -390,3 +390,46 @@
   background-color: color-mix(in srgb, var(--reading-accent) 5%, var(--reading-bg));
   border-color: color-mix(in srgb, var(--reading-accent) 20%, transparent);
 }
+
+/* ================================
+   代码块复制按钮
+   ================================ */
+
+.code-block-wrapper {
+  position: relative;
+}
+
+.code-copy-btn {
+  position: absolute;
+  top: 0.5rem;
+  right: 0.5rem;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--reading-border);
+  border-radius: 0.375rem;
+  background-color: var(--reading-bg);
+  color: var(--reading-muted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.2s ease, background-color 0.2s ease, color 0.2s ease;
+}
+
+.code-block-wrapper:hover .code-copy-btn {
+  opacity: 1;
+}
+
+.code-copy-btn:hover {
+  background-color: var(--reading-code-bg);
+  color: var(--reading-text);
+}
+
+.code-copy-btn.copied {
+  opacity: 1;
+  color: #22c55e;
+  border-color: #22c55e;
+}
