@@ -14,6 +14,7 @@ import {
   ChevronDown,
   RefreshCw
 } from 'lucide-react'
+import { ReadingThemePicker } from '@/components/reading-theme-picker'
 
 interface ArticleToolbarProps {
   sourceName: string
@@ -153,6 +154,11 @@ export default function ArticleToolbar({
           <span className="ml-1 text-xs">刷新</span>
           <kbd className="ml-1 text-xs bg-muted px-1 py-0.5 rounded">r</kbd>
         </Button>
+
+        <div className="w-px h-4 bg-border mx-1" />
+
+        {/* 阅读主题选择器 */}
+        <ReadingThemePicker />
       </div>
     </div>
   )

@@ -8,6 +8,7 @@ import ArticleCompare from '@/components/article-compare'
 import ArticleSidebar from './components/article-sidebar'
 import ArticleToolbar from './components/article-toolbar'
 import ArticleContent from './components/article-content'
+import { ReadingThemeProvider } from '@/contexts/reading-theme-context'
 
 interface Source {
   id?: string
@@ -303,7 +304,7 @@ export default function ArticleDetailPage() {
         />
 
         {/* 主内容区 */}
-        <div className="flex-1 min-w-0 overflow-hidden flex flex-col bg-card">
+        <ReadingThemeProvider>
           {/* 顶部工具栏 */}
           <ArticleToolbar
             sourceName={article.source.name}
@@ -335,7 +336,7 @@ export default function ArticleDetailPage() {
             contentLoading={contentLoading}
             onFetchFullContent={fetchFullContent}
           />
-        </div>
+        </ReadingThemeProvider>
       </div>
     </>
   )

@@ -39,15 +39,15 @@ export default function ArticleContent({
   }
 
   return (
-    <article className="flex-1 overflow-auto">
+    <article className="flex-1 overflow-auto" style={{ backgroundColor: 'var(--reading-bg)' }}>
       <div className="max-w-3xl mx-auto px-6 py-8">
         {/* 标题 */}
-        <h1 className="text-2xl md:text-3xl font-serif font-bold text-foreground leading-tight mb-4">
+        <h1 className="text-2xl md:text-3xl font-serif font-bold leading-tight mb-4" style={{ color: 'var(--reading-heading)' }}>
           {title}
         </h1>
 
         {/* 元信息 */}
-        <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground mb-6 pb-6 border-b border-border">
+        <div className="flex flex-wrap items-center gap-3 text-sm mb-6 pb-6" style={{ color: 'var(--reading-muted)', borderBottom: '1px solid var(--reading-border)' }}>
           {author && (
             <span className="font-medium">{author}</span>
           )}
@@ -58,7 +58,8 @@ export default function ArticleContent({
             href={url}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-primary hover:underline inline-flex items-center gap-1"
+            className="hover:underline inline-flex items-center gap-1"
+            style={{ color: 'var(--reading-link)' }}
           >
             查看原文
             <ExternalLink className="w-3 h-3" />
@@ -67,7 +68,7 @@ export default function ArticleContent({
 
         {/* 封面图 */}
         {imageUrl && (
-          <div className="mb-6 rounded-lg overflow-hidden bg-muted">
+          <div className="mb-6 rounded-lg overflow-hidden" style={{ backgroundColor: 'var(--reading-code-bg)' }}>
             <img
               src={imageUrl}
               alt=""
@@ -81,12 +82,12 @@ export default function ArticleContent({
 
         {/* AI 摘要 */}
         {summary && (
-          <div className="mb-6 p-4 bg-primary/5 border border-primary/20 rounded-lg">
-            <div className="flex items-center gap-2 text-primary mb-2">
+          <div className="ai-summary mb-6 p-4 rounded-lg" style={{ backgroundColor: 'color-mix(in srgb, var(--reading-accent) 8%, var(--reading-bg))', border: '1px solid color-mix(in srgb, var(--reading-accent) 25%, transparent)' }}>
+            <div className="flex items-center gap-2 mb-2" style={{ color: 'var(--reading-accent)' }}>
               <Sparkles className="w-4 h-4" />
               <span className="text-sm font-medium">AI 摘要</span>
             </div>
-            <p className="text-sm text-muted-foreground leading-relaxed">
+            <p className="text-sm leading-relaxed" style={{ color: 'var(--reading-muted)' }}>
               {summary}
             </p>
           </div>
@@ -94,7 +95,7 @@ export default function ArticleContent({
 
         {/* 加载状态 */}
         {contentLoading && (
-          <div className="flex items-center gap-2 text-muted-foreground mb-4 p-4 bg-muted/30 rounded-lg">
+          <div className="flex items-center gap-2 mb-4 p-4 rounded-lg" style={{ color: 'var(--reading-muted)', backgroundColor: 'var(--reading-code-bg)' }}>
             <Loader2 className="w-4 h-4 animate-spin" />
             正在加载全文...
           </div>
