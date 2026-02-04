@@ -306,9 +306,9 @@ export class BrowserlessClient {
    * 生成 PDF
    */
   async pdf(url: string, options: RequestOptions & {
-    format?: 'A4' | 'Letter' | 'Legal'
-    landscape?: boolean
-    printBackground?: boolean
+    format?: 'A4' | 'Letter' | 'Legal' // 纸张格式 (默认 A4、 Letter、Legal)
+    landscape?: boolean // 横向
+    printBackground?: boolean // 是否打印背景图
   } = {}): Promise<Buffer> {
     const {
       format = 'A4',
