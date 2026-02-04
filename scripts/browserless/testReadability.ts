@@ -1,25 +1,22 @@
 /**
- * 测试 code.claude.com 网站抓取（完整流程）
+ * 测试 Readability 内容提取优化方案
  *
- * 【功能说明】
- * 完整测试 Browserless 抓取流程：
- * 1. 获取 HTML
- * 2. 懒加载图片处理
- * 3. Readability 正文提取
- * 4. 图片处理
- * 5. HTML 净化
+ * 【核心思路】
+ * Readability 会过滤掉"杂乱"内容（如导航卡片），但它能准确识别内容区域的根元素。
+ * 我们利用这一点：
+ * 1. 用 Readability 识别内容根元素
+ * 2. 从 article.content 中提取根元素的选择器（id/class）
+ * 3. 用选择器在源 DOM 中查找，获取未过滤的完整内容
  *
  * 【运行方式】
- * npx tsx scripts/browserless/12-test-claude-docs.ts
+ * npx tsx scripts/browserless/testReadability.ts
  */
 
 import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'fs'
 import { join } from 'path'
-import { BrowserlessClient } from './utils/browserless-client'
 import { Readability } from '@mozilla/readability'
 import { JSDOM } from 'jsdom'
 
-const client = new BrowserlessClient()
 const OUTPUT_DIR = join(process.cwd(), 'scripts/browserless/output')
 
 // 确保输出目录存在
@@ -37,153 +34,159 @@ const LAZY_ATTRIBUTES = [
   'data-actualsrc',
   'data-hi-res-src',
   'data-lazy',
-  'data-echo'
+  'data-echo',
 ]
+
+/**
+ * 从 Readability 提取的内容中获取根元素选择器
+ *
+ * @param contentHtml - Readability 返回的 content HTML
+ * @returns 选择器字符串或 null
+ */
+function extractRootSelector(contentHtml: string): string | null {
+  // 解析 Readability 返回的 HTML
+  const dom = new JSDOM(contentHtml)
+  const doc = dom.window.document
+
+  // Readability 会包装一个 div#readability-page-1，真正的根元素是它的第一个子元素
+  const wrapper = doc.querySelector('#readability-page-1')
+  const rootElement = wrapper?.firstElementChild || doc.body.firstElementChild
+
+  if (!rootElement) return null
+
+  // 优先使用 id 选择器
+  const id = rootElement.getAttribute('id')
+  if (id && id !== 'readability-page-1') {
+    console.log(`   找到根元素 ID: #${id}`)
+    return `#${id}`
+  }
+
+  // 其次使用特征 class
+  const classList = rootElement.getAttribute('class')
+  if (classList) {
+    // 取第一个有意义的 class（避免通用 class 如 'page', 'content'）
+    const classes = classList.split(/\s+/).filter(c =>
+      c.length > 3 &&
+      !['page', 'content', 'main', 'wrapper', 'container'].includes(c)
+    )
+    if (classes.length > 0) {
+      console.log(`   找到根元素 class: .${classes[0]}`)
+      return `.${classes[0]}`
+    }
+  }
+
+  // 使用 data 属性
+  const dataAttrs = Array.from(rootElement.attributes)
+    .filter(attr => attr.name.startsWith('data-') && attr.value)
+  if (dataAttrs.length > 0) {
+    const selector = `[${dataAttrs[0].name}="${dataAttrs[0].value}"]`
+    console.log(`   找到根元素 data 属性: ${selector}`)
+    return selector
+  }
+
+  return null
+}
 
 async function main() {
   console.log('='.repeat(60))
-  console.log('测试 html 解析（完整流程）')
+  console.log('测试 Readability 内容提取优化方案')
   console.log('='.repeat(60))
 
   const url = 'https://code.claude.com/docs/zh-CN'
   console.log(`\n目标 URL: ${url}`)
   const startTime = Date.now()
 
+  // 1. 读取源 HTML
+  console.log('\n📄 步骤 1: 读取源 HTML...')
+  const html = readFileSync(join(OUTPUT_DIR, '12-raw-html.html'), 'utf-8')
+  console.log(`   HTML 长度: ${html.length} 字符`)
 
-  // 3. 获取页面 HTML
-  console.log('\n🌐 步骤 3: 获取页面 HTML...')
+  // 2. 创建两个 DOM：一个给 Readability 分析，一个保留原始内容
+  console.log('\n🔧 步骤 2: 准备 DOM...')
+  const sourceDom = new JSDOM(html, { url })
+  const sourceDoc = sourceDom.window.document
 
-  let html = readFileSync(join(OUTPUT_DIR, '12-raw-html.html'), 'utf-8')
+  // 克隆一份给 Readability（它会修改 DOM）
+  const clonedHtml = html
+  const readabilityDom = new JSDOM(clonedHtml, { url })
+  const readabilityDoc = readabilityDom.window.document
 
-  // 3. 解析 HTML 并处理懒加载图片
-  console.log('\n🔧 步骤 4: 解析 HTML 并处理懒加载图片...')
-  const dom = new JSDOM(html, { url })
-  const document = dom.window.document
-
-  // 处理懒加载图片
-  const imgElements = document.querySelectorAll('img')
-  let lazyImgCount = 0
-  imgElements.forEach((img) => {
-    for (const attr of LAZY_ATTRIBUTES) {
-      const lazySrc = img.getAttribute(attr)
-      if (lazySrc && (lazySrc.startsWith('http') || lazySrc.startsWith('/'))) {
-        img.setAttribute('src', lazySrc)
-        lazyImgCount++
-        break
+  // 处理懒加载图片（两个 DOM 都处理）
+  for (const doc of [sourceDoc, readabilityDoc]) {
+    const imgElements = doc.querySelectorAll('img')
+    imgElements.forEach((img) => {
+      for (const attr of LAZY_ATTRIBUTES) {
+        const lazySrc = img.getAttribute(attr)
+        if (lazySrc && (lazySrc.startsWith('http') || lazySrc.startsWith('/'))) {
+          img.setAttribute('src', lazySrc)
+          break
+        }
       }
-    }
-    const dataSrcset = img.getAttribute('data-srcset')
-    if (dataSrcset) {
-      img.setAttribute('srcset', dataSrcset)
-    }
-  })
-  console.log(`   图片总数: ${imgElements.length}`)
-  console.log(`   懒加载图片处理: ${lazyImgCount}`)
+    })
+  }
 
-  // 4. 使用 Readability 提取正文（带优化参数）
-  console.log('\n📖 步骤 5: 使用 Readability 提取正文...')
-
-  // Readability 配置选项说明：
-  // - charThreshold: 最小字符阈值，默认500，降低可以保留更多内容
-  // - nbTopCandidates: 候选元素数量，默认5，增加可以考虑更多内容块
-  // - keepClasses: 保留 CSS 类名，便于后续样式处理
-  // - classesToPreserve: 指定要保留的类名列表
-  const reader = new Readability(document, {
-    charThreshold: 0,           // 设为0，不过滤短内容
-    nbTopCandidates: 10,        // 增加候选数量
-    keepClasses: true,          // 保留类名
-    debug: false,               // 调试模式
+  // 3. 使用 Readability 分析（识别内容区域）
+  console.log('\n📖 步骤 3: Readability 分析内容区域...')
+  const reader = new Readability(readabilityDoc, {
+    charThreshold: 0,
+    nbTopCandidates: 10,
+    keepClasses: true,
   })
   const article = reader.parse()
-  console.log('   正文提取结果:', article)
 
   if (!article || !article.content) {
-    console.error('   ❌ Readability 提取失败：无法解析正文')
-    console.log('\n🔍 调试信息:')
-    console.log(`   页面标题: ${document.title}`)
-    console.log(`   body 长度: ${document.body?.innerHTML?.length || 0}`)
-
-    // 尝试手动查找内容区域
-    const mainContent = document.querySelector('main') || document.querySelector('article') || document.querySelector('.content')
-    if (mainContent) {
-      console.log(`   找到内容区域: ${mainContent.tagName}, 长度: ${mainContent.innerHTML.length}`)
-
-      // 保存内容区域
-      const mainHtmlPath = join(OUTPUT_DIR, '12-main-content.html')
-      writeFileSync(mainHtmlPath, mainContent.innerHTML)
-      console.log(`   保存内容区域: ${mainHtmlPath}`)
-    }
+    console.error('   ❌ Readability 无法识别内容区域')
     return
   }
 
-  console.log(`   ✅ 提取成功!`)
+  console.log(`   ✅ Readability 识别成功`)
   console.log(`   标题: ${article.title}`)
-  console.log(`   作者: ${article.byline || '未知'}`)
-  console.log(`   站点: ${article.siteName || '未知'}`)
-  console.log(`   摘要: ${article.excerpt?.substring(0, 100)}...`)
-  console.log(`   正文长度: ${article.textContent?.length || 0} 字符`)
-  console.log(`   HTML 长度: ${article.content.length} 字符`)
+  console.log(`   Readability 提取的内容长度: ${article.content.length} 字符`)
 
-  // 5. 保存结果
-  console.log('\n💾 步骤 6: 保存结果...')
+  // 保存 Readability 提取的内容（用于对比）
+  const readabilityPath = join(OUTPUT_DIR, 'test-readability-content.html')
+  writeFileSync(readabilityPath, article.content)
+  console.log(`   保存 Readability 内容: ${readabilityPath}`)
 
-  // 保存提取的 HTML
-  const contentHtmlPath = join(OUTPUT_DIR, '12-extracted-content.html')
-  const fullHtml = `
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${article.title || 'Extracted Content'}</title>
-  <style>
-    body {
-      max-width: 800px;
-      margin: 0 auto;
-      padding: 20px;
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-      line-height: 1.6;
-      color: #333;
-    }
-    h1 { color: #1a1a1a; border-bottom: 2px solid #eee; padding-bottom: 10px; }
-    .meta { color: #666; font-size: 14px; margin-bottom: 20px; }
-    .excerpt { background: #f5f5f5; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
-    img { max-width: 100%; height: auto; }
-    pre { background: #f5f5f5; padding: 15px; overflow-x: auto; border-radius: 5px; }
-    code { background: #f0f0f0; padding: 2px 5px; border-radius: 3px; }
-    pre code { background: none; padding: 0; }
-  </style>
-</head>
-<body>
-  <h1>${article.title || 'Untitled'}</h1>
-  <div class="meta">
-    ${article.byline ? `<span>作者: ${article.byline}</span> | ` : ''}
-    ${article.siteName ? `<span>来源: ${article.siteName}</span>` : ''}
-  </div>
-  ${article.excerpt ? `<div class="excerpt">${article.excerpt}</div>` : ''}
-  <div class="content">
-    ${article.content}
-  </div>
-</body>
-</html>
-`
-  writeFileSync(contentHtmlPath, fullHtml)
-  console.log(`   提取的 HTML: ${contentHtmlPath}`)
+  // 4. 从 Readability 内容中提取根元素选择器
+  console.log('\n🔍 步骤 4: 提取根元素选择器...')
+  const rootSelector = extractRootSelector(article.content)
 
-  // 保存纯文本
-  const textPath = join(OUTPUT_DIR, '12-extracted-text.txt')
-  writeFileSync(textPath, article.textContent || '')
-  console.log(`   纯文本: ${textPath}`)
+  if (!rootSelector) {
+    console.error('   ❌ 无法提取根元素选择器')
+    return
+  }
 
-  // 6. 输出总结
+  // 5. 用选择器在源 DOM 中查找完整内容
+  console.log('\n🎯 步骤 5: 从源 DOM 获取完整内容...')
+  const originalRoot = sourceDoc.querySelector(rootSelector)
+
+  if (!originalRoot) {
+    console.error(`   ❌ 在源 DOM 中找不到元素: ${rootSelector}`)
+    return
+  }
+
+  const fullContent = originalRoot.innerHTML
+  console.log(`   ✅ 找到完整内容!`)
+  console.log(`   完整内容长度: ${fullContent.length} 字符`)
+  console.log(`   内容增加: ${fullContent.length - article.content.length} 字符 (+${((fullContent.length / article.content.length - 1) * 100).toFixed(1)}%)`)
+
+  // 保存完整内容
+  const fullContentPath = join(OUTPUT_DIR, 'test-full-content.html')
+  writeFileSync(fullContentPath, fullContent)
+  console.log(`   保存完整内容: ${fullContentPath}`)
+
+  // 6. 对比统计
   const duration = Date.now() - startTime
   console.log('\n' + '='.repeat(60))
-  console.log('✅ 完整抓取流程完成!')
+  console.log('📊 对比结果')
   console.log('='.repeat(60))
-  console.log(`   总耗时: ${duration}ms`)
+  console.log(`   Readability 内容: ${article.content.length} 字符`)
+  console.log(`   完整内容: ${fullContent.length} 字符`)
   console.log(`   标题: ${article.title}`)
-  console.log(`   正文: ${article.textContent?.length || 0} 字符`)
-  console.log(`\n   查看提取结果: ${contentHtmlPath}`)
+  console.log(`   耗时: ${duration}ms`)
+  console.log(`\n   Readability 内容: ${readabilityPath}`)
+  console.log(`   完整内容: ${fullContentPath}`)
 }
 
 main().catch(console.error)

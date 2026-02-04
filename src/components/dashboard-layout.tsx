@@ -20,6 +20,7 @@ import {
   PanelLeft,
   Key,
   SlidersHorizontal,
+  Activity,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -39,6 +40,7 @@ const adminNavigation = [
   { name: "后台管理", href: "/admin", icon: Shield },
   { name: "用户管理", href: "/admin/users", icon: Users },
   { name: "任务管理", href: "/admin/tasks", icon: ListTodo },
+  { name: "队列监控", href: "/admin/queues", icon: Activity },
   { name: "凭证管理", href: "/admin/credentials", icon: Key },
   { name: "系统设置", href: "/admin/settings", icon: SlidersHorizontal },
 ];

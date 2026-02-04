@@ -1,0 +1,147 @@
+<h2 id="30-秒内开始使用">
+  <span>30 秒内开始使用</span>
+</h2>
+
+<p>前置条件：</p>
+
+<ul>
+  <li>一个 <a href="https://claude.ai" target="_blank" rel="noreferrer">Claude.ai</a>（推荐）或 <a
+      href="https://console.anthropic.com/" target="_blank" rel="noreferrer">Claude Console</a> 账户</li>
+
+</ul>
+
+<p><strong>安装 Claude Code：</strong></p>
+
+<p>To install Claude Code, use one of the following methods:</p>
+
+<div>
+  <p><strong>macOS, Linux, WSL:</strong></p>
+
+  <pre><code>curl -fsSL https://claude.ai/install.sh | bash</code></pre>
+
+  <p><strong>Windows PowerShell:</strong></p>
+
+  <pre><code>irm https://claude.ai/install.ps1 | iex</code></pre>
+
+  <p><strong>Windows CMD:</strong></p>
+
+  <pre><code>curl -fsSL https://claude.ai/install.cmd -o install.cmd &amp;&amp; install.cmd &amp;&amp; del install.cmd</code></pre>
+
+  <div>
+    <p>Native installations automatically update in the
+      background to keep you on the latest version.</p>
+  </div>
+
+</div>
+
+<p><strong>开始使用 Claude Code：</strong></p>
+
+<pre><code>cd your-project
+claude</code></pre>
+
+<p>首次使用时，系统会提示您登录。就这么简单！<a href="/docs/zh-CN/quickstart">继续快速入门（5 分钟）→</a></p>
+
+<div>
+  <p>Claude Code 会自动保持最新状态。有关安装选项、手动更新或卸载说明，请参阅<a href="/docs/zh-CN/setup">高级设置</a>。如果遇到问题，请访问<a
+      href="/docs/zh-CN/troubleshooting">故障排除</a>。</p>
+
+</div>
+
+<h2 id="claude-code-为您做什么">
+  <span>Claude Code 为您做什么</span>
+</h2>
+
+<ul>
+  <li><strong>从描述构建功能</strong>：用纯英文告诉 Claude 您想构建什么。它将制定计划、编写代码并确保其正常工作。</li>
+
+  <li><strong>调试和修复问题</strong>：描述一个错误或粘贴错误消息。Claude Code 将分析您的代码库、识别问题并实施修复。</li>
+
+  <li><strong>导航任何代码库</strong>：询问有关您团队代码库的任何内容，并获得深思熟虑的答案。Claude Code 维护对整个项目结构的认识，可以从网络上查找最新信息，并且通过 <a
+      href="/docs/zh-CN/mcp">MCP</a> 可以从 Google Drive、Figma 和 Slack 等外部数据源提取数据。</li>
+
+  <li><strong>自动化繁琐任务</strong>：修复棘手的 lint 问题、解决合并冲突和编写发行说明。从您的开发机器上用一个命令完成所有这些，或在 CI 中自动完成。</li>
+
+</ul>
+
+<h2 id="为什么开发者喜欢-claude-code">
+  <span>为什么开发者喜欢 Claude Code</span>
+</h2>
+
+<ul>
+  <li><strong>在您的终端中工作</strong>：不是另一个聊天窗口。不是另一个 IDE。Claude Code 在您已经工作的地方与您相遇，使用您已经喜欢的工具。</li>
+
+  <li><strong>采取行动</strong>：Claude Code 可以直接编辑文件、运行命令和创建提交。需要更多？<a href="/docs/zh-CN/mcp">MCP</a> 让 Claude
+    读取您在 Google Drive 中的设计文档、更新您在 Jira 中的工单，或使用_您的_自定义开发者工具。</li>
+
+  <li><strong>Unix 哲学</strong>：Claude Code
+    是可组合和可脚本化的。<code>tail -f app.log | claude -p "Slack me if you see any anomalies appear in this log stream"</code>
+    <em>有效</em>。您的 CI 可以运行
+    <code>claude -p "If there are new text strings, translate them into French and raise a PR for @lang-fr-team to review"</code>。
+  </li>
+
+  <li><strong>企业就绪</strong>：使用 Claude API，或在 AWS 或 GCP 上托管。企业级<a href="/docs/zh-CN/security">安全</a>、<a
+      href="/docs/zh-CN/data-usage">隐私</a>和<a href="https://trust.anthropic.com/" target="_blank"
+      rel="noreferrer">合规性</a>是内置的。</li>
+
+</ul>
+
+<h2 id="后续步骤">
+  <span>后续步骤</span>
+</h2>
+
+<div><a href="/docs/zh-CN/quickstart">
+    <h3>快速入门</h3>
+
+    <p>通过实际示例查看 Claude Code 的实际应用</p>
+  </a><a href="/docs/zh-CN/common-workflows">
+    <h3>常见工作流程</h3>
+
+    <p>常见工作流程的分步指南</p>
+  </a><a href="/docs/zh-CN/troubleshooting">
+    <h3>故障排除</h3>
+
+    <p>Claude Code 常见问题的解决方案</p>
+  </a><a href="/docs/zh-CN/vs-code">
+    <h3>IDE 设置</h3>
+
+    <p>将 Claude Code 添加到您的 IDE</p>
+  </a></div>
+
+<h2 id="其他资源">
+  <span>其他资源</span>
+</h2>
+
+<div><a href="https://claude.com/product/claude-code" target="_blank" rel="noreferrer">
+    <h3>关于 Claude Code</h3>
+
+    <p>在 claude.com 上了解有关 Claude Code 的更多信息</p>
+  </a><a href="https://docs.claude.com/en/docs/agent-sdk/overview" target="_blank" rel="noreferrer">
+    <h3>使用 Agent SDK 构建</h3>
+
+    <p>使用 Claude Agent SDK 创建自定义 AI 代理</p>
+  </a><a href="/docs/zh-CN/third-party-integrations">
+    <h3>在 AWS 或 GCP 上托管</h3>
+
+    <p>使用 Amazon Bedrock 或 Google Vertex AI 配置 Claude
+      Code</p>
+  </a><a href="/docs/zh-CN/settings">
+    <h3>设置</h3>
+
+    <p>为您的工作流程自定义 Claude Code</p>
+  </a><a href="/docs/zh-CN/cli-reference">
+    <h3>命令</h3>
+
+    <p>了解 CLI 命令和控制</p>
+  </a><a href="https://github.com/anthropics/claude-code/tree/main/.devcontainer" target="_blank" rel="noreferrer">
+    <h3>参考实现</h3>
+
+    <p>克隆我们的开发容器参考实现</p>
+  </a><a href="/docs/zh-CN/security">
+    <h3>安全</h3>
+
+    <p>发现 Claude Code 的保护措施和安全使用的最佳实践</p>
+  </a><a href="/docs/zh-CN/data-usage">
+    <h3>隐私和数据使用</h3>
+
+    <p>了解 Claude Code 如何处理您的数据</p>
+  </a></div>
