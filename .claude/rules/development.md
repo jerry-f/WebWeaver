@@ -72,6 +72,12 @@
 - API 路由验证用户权限
 - 管理员功能检查 `role === 'admin'`
 
+## 端口配置
+
+- **Next.js 运行在 3001 端口**（见 `.env` 中的 `NEXTAUTH_URL`）
+- **WebSocket 服务运行在 3002 端口**
+- CORS 配置需要使用 3001 端口作为来源
+
 ## 测试账号
-账号: "ufei0123@gmail.com"
+账号: "test@qq.com"
 密码: "safe123"
