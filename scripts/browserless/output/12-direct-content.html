@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Code 概览 - Claude Code Docs</title>
+  <style>
+    body {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.6;
+      color: #333;
+    }
+
+    h1,
+    h2,
+    h3 {
+      color: #1a1a1a;
+    }
+
+    a {
+      color: #0066cc;
+    }
+
+    img {
+      max-width: 100%;
+      height: auto;
+    }
+
+    pre {
+      background: #f5f5f5;
+      padding: 15px;
+      overflow-x: auto;
+      border-radius: 5px;
+    }
+
+    code {
+      background: #f0f0f0;
+      padding: 2px 5px;
+      border-radius: 3px;
+    }
+
+    pre code {
+      background: none;
+      padding: 0;
+    }
+
+    /* 保留卡片样式 */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+    }
+
+    [class*="card"] {
+      border: 1px solid #e5e5e5;
+      padding: 16px;
+      border-radius: 8px;
+    }
+  </style>
+</head>
+
+<body>
+  <h1>Claude Code 概览 - Claude Code Docs</h1>
+  <div class="content">
+    <h2 class="flex whitespace-pre-wrap group font-semibold" id="30-秒内开始使用"><span class="cursor-pointer">30
+        秒内开始使用</span></h2>
+    <p><span data-as="p">前置条件：</span></p>
+    <ul>
+      <li>一个 <a href="https://claude.ai/" target="_blank" rel="noreferrer" class="link">Claude.ai</a>（推荐）或 <a
+          href="https://console.anthropic.com/" target="_blank" rel="noreferrer" class="link">Claude Console</a> 账户</li>
+    </ul>
+    <p><span data-as="p"><strong>安装 Claude Code：</strong></span>
+      <span data-as="p">To install Claude Code, use one of the following methods:</span>
+    </p>
+    <div class="tabs tabs tab-container" id="native-install-recommended">
+      <ul role="tablist"
+        class="not-prose mb-6 pb-[1px] flex-none min-w-full overflow-auto border-b border-gray-200 gap-x-6 flex dark:border-gray-200/10"
+        data-component-part="tabs-list">
+        <li id="native-install-recommended" role="tab" aria-selected="true"
+          aria-controls="panel-native-install-recommended-0" tabindex="0" class="cursor-pointer">
+          <p> Native Install (Recommended)</p>
+        </li>
+        <li id="homebrew" role="tab" aria-selected="false" aria-controls="panel-homebrew-1" tabindex="-1"
+          class="cursor-pointer">
+          <p> Homebrew</p>
+        </li>
+        <li id="winget" role="tab" aria-selected="false" aria-controls="panel-winget-2" tabindex="-1"
+          class="cursor-pointer">
+          <p> WinGet</p>
+        </li>
+      </ul>
+      <div>
+        <div id="panel-native-install-recommended-0" role="tabpanel" aria-labelledby="native-install-recommended"
+          class="prose dark:prose-dark overflow-x-auto [&amp;_[data-table-wrapper]]:![--page-padding:0px] [&amp;_[role=&quot;listitem&quot;]]:pl-4"
+          data-component-part="tab-content">
+          <p><span data-as="p"><strong>macOS, Linux, WSL:</strong></span></p>
+          <div
+            class="code-block mt-5 mb-8 not-prose rounded-2xl relative group text-gray-950 dark:text-gray-50 codeblock-light border border-gray-950/10 dark:border-white/10 dark:twoslash-dark bg-transparent dark:bg-transparent"
+            data-component-part="code-block-root" tabindex="0" numberoflines="1" language="shellscript">
+            <pre class="shiki shiki-themes github-light-default dark-plus" language="shellscript"><code language="shellscript" numberoflines="1"><span class="line"><span>curl</span><span> -fsSL</span><span> https://claude.ai/install.sh</span><span> |</span><span> bash</span></span>
+</code></pre>
+          </div>
+          <p><span data-as="p"><strong>Windows PowerShell:</strong></span></p>
+          <div
+            class="code-block mt-5 mb-8 not-prose rounded-2xl relative group text-gray-950 dark:text-gray-50 codeblock-light border border-gray-950/10 dark:border-white/10 dark:twoslash-dark bg-transparent dark:bg-transparent"
+            data-component-part="code-block-root" tabindex="0" numberoflines="1" language="powershell">
+            <pre class="shiki shiki-themes github-light-default dark-plus" language="powershell"><code language="powershell" numberoflines="1"><span class="line"><span>irm https:</span><span>//</span><span>claude.ai</span><span>/</span><span>install.ps1 </span><span>|</span><span> iex</span></span>
+</code></pre>
+          </div>
+          <p><span data-as="p"><strong>Windows CMD:</strong></span></p>
+          <div
+            class="code-block mt-5 mb-8 not-prose rounded-2xl relative group text-gray-950 dark:text-gray-50 codeblock-light border border-gray-950/10 dark:border-white/10 dark:twoslash-dark bg-transparent dark:bg-transparent"
+            data-component-part="code-block-root" tabindex="0" numberoflines="1" language="bat">
+            <pre class="shiki shiki-themes github-light-default dark-plus" language="bat"><code language="bat" numberoflines="1"><span class="line"><span>curl -fsSL https://claude.ai/install.cmd -o install.cmd </span><span>&amp;&amp;</span><span> install.cmd </span><span>&amp;&amp;</span><span> del</span><span> install.cmd</span></span>
+</code></pre>
+          </div>
+        </div>
+        <div
+          class="prose dark:prose-dark overflow-x-auto [&amp;_[data-table-wrapper]]:![--page-padding:0px] [&amp;_[role=&quot;listitem&quot;]]:pl-4 hidden"
+          data-component-part="tab-content" tabindex="0" numberoflines="1" language="shellscript" id="panel-homebrew-1"
+          role="tabpanel" aria-labelledby="homebrew">
+          <pre class="shiki shiki-themes github-light-default dark-plus" language="shellscript"><code language="shellscript" numberoflines="1"><span class="line"><span>brew</span><span> install</span><span> --cask</span><span> claude-code</span></span>
+</code></pre>
+        </div>
+        <div
+          class="prose dark:prose-dark overflow-x-auto [&amp;_[data-table-wrapper]]:![--page-padding:0px] [&amp;_[role=&quot;listitem&quot;]]:pl-4 hidden"
+          data-component-part="tab-content" tabindex="0" numberoflines="1" language="powershell" id="panel-winget-2"
+          role="tabpanel" aria-labelledby="winget">
+          <pre class="shiki shiki-themes github-light-default dark-plus" language="powershell"><code language="powershell" numberoflines="1"><span class="line"><span>winget install Anthropic.ClaudeCode</span></span>
+</code></pre>
+        </div>
+      </div>
+    </div>
+    <p><span data-as="p"><strong>开始使用 Claude Code：</strong></span></p>
+    <div
+      class="code-block mt-5 mb-8 not-prose rounded-2xl relative group text-gray-950 dark:text-gray-50 codeblock-light border border-gray-950/10 dark:border-white/10 dark:twoslash-dark bg-transparent dark:bg-transparent"
+      data-component-part="code-block-root" tabindex="0" numberoflines="2" language="shellscript">
+      <pre class="shiki shiki-themes github-light-default dark-plus" language="shellscript"><code language="shellscript" numberoflines="2"><span class="line"><span>cd</span><span> your-project</span></span>
+<span class="line"><span>claude</span></span>
+</code></pre>
+    </div>
+    <p><span data-as="p">首次使用时，系统会提示您登录。就这么简单！<a class="link"
+          href="https://code.claude.com/docs/zh-CN/quickstart">继续快速入门（5 分钟）→</a></span></p>
+
+    <ul>
+      <li><strong>从描述构建功能</strong>：用纯英文告诉 Claude 您想构建什么。它将制定计划、编写代码并确保其正常工作。</li>
+      <li><strong>调试和修复问题</strong>：描述一个错误或粘贴错误消息。Claude Code 将分析您的代码库、识别问题并实施修复。</li>
+      <li><strong>导航任何代码库</strong>：询问有关您团队代码库的任何内容，并获得深思熟虑的答案。Claude Code 维护对整个项目结构的认识，可以从网络上查找最新信息，并且通过 <a class="link"
+          href="https://code.claude.com/docs/zh-CN/mcp">MCP</a> 可以从 Google Drive、Figma 和 Slack 等外部数据源提取数据。</li>
+      <li><strong>自动化繁琐任务</strong>：修复棘手的 lint 问题、解决合并冲突和编写发行说明。从您的开发机器上用一个命令完成所有这些，或在 CI 中自动完成。</li>
+    </ul>
+    <h2 class="flex whitespace-pre-wrap group font-semibold" id="为什么开发者喜欢-claude-code"><span
+        class="cursor-pointer">为什么开发者喜欢 Claude Code</span></h2>
+    <ul>
+      <li><strong>在您的终端中工作</strong>：不是另一个聊天窗口。不是另一个 IDE。Claude Code 在您已经工作的地方与您相遇，使用您已经喜欢的工具。</li>
+      <li><strong>采取行动</strong>：Claude Code 可以直接编辑文件、运行命令和创建提交。需要更多？<a class="link"
+          href="https://code.claude.com/docs/zh-CN/mcp">MCP</a> 让 Claude 读取您在 Google Drive 中的设计文档、更新您在 Jira
+        中的工单，或使用_您的_自定义开发者工具。</li>
+      <li><strong>Unix 哲学</strong>：Claude Code
+        是可组合和可脚本化的。<code>tail -f app.log | claude -p "Slack me if you see any anomalies appear in this log stream"</code>
+        <em>有效</em>。您的 CI 可以运行
+        <code>claude -p "If there are new text strings, translate them into French and raise a PR for @lang-fr-team to review"</code>。
+      </li>
+      <li><strong>企业就绪</strong>：使用 Claude API，或在 AWS 或 GCP 上托管。企业级<a class="link"
+          href="https://code.claude.com/docs/zh-CN/security">安全</a>、<a class="link"
+          href="https://code.claude.com/docs/zh-CN/data-usage">隐私</a>和<a href="https://trust.anthropic.com/"
+          target="_blank" rel="noreferrer" class="link">合规性</a>是内置的。</li>
+    </ul>
+    <h2 class="flex whitespace-pre-wrap group font-semibold" id="后续步骤"><span class="cursor-pointer">后续步骤</span></h2>
+
+    <h2 class="flex whitespace-pre-wrap group font-semibold" id="其他资源"><span class="cursor-pointer">其他资源</span></h2>
+
+  </div>
+</body>
+
+</html>

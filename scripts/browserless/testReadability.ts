@@ -13,7 +13,7 @@
  * npx tsx scripts/browserless/12-test-claude-docs.ts
  */
 
-import { writeFileSync, mkdirSync, existsSync } from 'fs'
+import { writeFileSync, mkdirSync, readFileSync, existsSync } from 'fs'
 import { join } from 'path'
 import { BrowserlessClient } from './utils/browserless-client'
 import { Readability } from '@mozilla/readability'
@@ -42,64 +42,18 @@ const LAZY_ATTRIBUTES = [
 
 async function main() {
   console.log('='.repeat(60))
-  console.log('测试 code.claude.com 网站抓取（完整流程）')
+  console.log('测试 html 解析（完整流程）')
   console.log('='.repeat(60))
 
   const url = 'https://code.claude.com/docs/zh-CN'
   console.log(`\n目标 URL: ${url}`)
-
-  // 1. 检查 Browserless 服务状态
-  console.log('\n📊 步骤 1: 检查 Browserless 服务状态...')
-  try {
-    const health = await client.checkHealth()
-    console.log(`   服务状态: ✅ 可用`)
-    console.log(`   运行中: ${health.running}/${health.maxConcurrent}`)
-  } catch (error) {
-    console.error('   服务状态: ❌ 不可用')
-    console.error('   错误:', error)
-    process.exit(1)
-  }
-
-  // 2. 截图原始页面
-  console.log('\n📸 步骤 2: 截图原始页面...')
   const startTime = Date.now()
 
-  try {
-    const screenshotBuffer = await client.screenshot(url, {
-      waitUntil: 'networkidle2',
-      timeout: 30000,
-      fullPage: true,
-      type: 'png'
-    })
-    const screenshotPath = join(OUTPUT_DIR, '12-original-screenshot.png')
-    writeFileSync(screenshotPath, screenshotBuffer)
-    console.log(`   ✅ 截图成功 (${Date.now() - startTime}ms)`)
-    console.log(`   文件大小: ${(screenshotBuffer.length / 1024).toFixed(2)} KB`)
-    console.log(`   保存路径: ${screenshotPath}`)
-  } catch (error) {
-    console.error(`   ❌ 截图失败:`, error)
-  }
 
   // 3. 获取页面 HTML
   console.log('\n🌐 步骤 3: 获取页面 HTML...')
 
-  let html: string
-  try {
-    html = await client.getContent(url, {
-      waitUntil: 'networkidle2',
-      timeout: 30000
-    })
-    console.log(`   ✅ 获取成功 (${Date.now() - startTime}ms)`)
-    console.log(`   HTML 长度: ${html.length} 字符`)
-
-    // 保存原始 HTML
-    const rawHtmlPath = join(OUTPUT_DIR, '12-raw-html.html')
-    writeFileSync(rawHtmlPath, html)
-    console.log(`   保存原始 HTML: ${rawHtmlPath}`)
-  } catch (error) {
-    console.error(`   ❌ 获取失败:`, error)
-    process.exit(1)
-  }
+  let html = readFileSync(join(OUTPUT_DIR, '12-raw-html.html'), 'utf-8')
 
   // 3. 解析 HTML 并处理懒加载图片
   console.log('\n🔧 步骤 4: 解析 HTML 并处理懒加载图片...')
@@ -126,10 +80,22 @@ async function main() {
   console.log(`   图片总数: ${imgElements.length}`)
   console.log(`   懒加载图片处理: ${lazyImgCount}`)
 
-  // 4. 使用 Readability 提取正文
+  // 4. 使用 Readability 提取正文（带优化参数）
   console.log('\n📖 步骤 5: 使用 Readability 提取正文...')
-  const reader = new Readability(document)
+
+  // Readability 配置选项说明：
+  // - charThreshold: 最小字符阈值，默认500，降低可以保留更多内容
+  // - nbTopCandidates: 候选元素数量，默认5，增加可以考虑更多内容块
+  // - keepClasses: 保留 CSS 类名，便于后续样式处理
+  // - classesToPreserve: 指定要保留的类名列表
+  const reader = new Readability(document, {
+    charThreshold: 0,           // 设为0，不过滤短内容
+    nbTopCandidates: 10,        // 增加候选数量
+    keepClasses: true,          // 保留类名
+    debug: false,               // 调试模式
+  })
   const article = reader.parse()
+  console.log('   正文提取结果:', article)
 
   if (!article || !article.content) {
     console.error('   ❌ Readability 提取失败：无法解析正文')
