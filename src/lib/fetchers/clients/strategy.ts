@@ -57,6 +57,8 @@ const KNOWN_SPA_DOMAINS: DomainRule[] = [
   { pattern: '*.bilibili.com', strategy: 'browserless', note: 'B站 SPA' },
   { pattern: '*.douban.com', strategy: 'fetch', note: '豆瓣静态渲染' },
   { pattern: '*.juejin.cn', strategy: 'browserless', note: '掘金 SPA' },
+  { pattern: '*.infoq.cn', strategy: 'browserless', note: 'InfoQ 中国 SPA' },
+  { pattern: 'www.infoq.cn', strategy: 'browserless', note: 'InfoQ 中国 SPA' },
   { pattern: '*.segmentfault.com', strategy: 'fetch', note: 'SegmentFault 静态渲染' },
 
   // 电商

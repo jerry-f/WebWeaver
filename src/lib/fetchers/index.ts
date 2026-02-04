@@ -26,7 +26,7 @@ const credentialManager = new CredentialManager()
  */
 export async function fetchSource(
   sourceId: string,
-  options: { triggeredBy?: 'manual' | 'scheduled' } = {}
+  options: { triggeredBy?: 'manual' | 'scheduled'; force?: boolean } = {}
 ): Promise<{ jobId: string }> {
   // 验证源存在
   const source = await prisma.source.findUnique({ where: { id: sourceId } })
@@ -41,7 +41,8 @@ export async function fetchSource(
   await addSourceFetchJob({
     jobId,
     sourceId,
-    triggeredBy: options.triggeredBy || 'manual'
+    triggeredBy: options.triggeredBy || 'manual',
+    force: options.force
   })
 
   console.log(`[fetchSource] ${source.name}: 任务已入队 (${jobId})`)

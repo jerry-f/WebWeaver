@@ -157,10 +157,12 @@ export function useFetchSource() {
   const [jobId, setJobId] = useState<string | null>(null)
   const jobStatus = useJobStatus(jobId)
 
-  const fetch = useCallback(async (sourceId: string) => {
+  const fetch = useCallback(async (sourceId: string, options?: { force?: boolean }) => {
     try {
       const response = await globalThis.fetch(`/api/sources/${sourceId}/fetch`, {
-        method: 'POST'
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: options?.force })
       })
 
       if (!response.ok) {

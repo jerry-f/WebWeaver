@@ -16,6 +16,7 @@ import {
   Filter,
   ChevronDown,
   RefreshCw,
+  RefreshCcw,
   Trash2,
   CheckSquare,
   Square,
@@ -201,7 +202,7 @@ function ArticlesContent() {
   }, [])
 
   // 批量操作
-  const executeBatchAction = useCallback(async (action: 'refresh' | 'delete' | 'markRead' | 'markUnread') => {
+  const executeBatchAction = useCallback(async (action: 'refresh' | 'forceRefresh' | 'delete' | 'markRead' | 'markUnread') => {
     if (selectedArticleIds.size === 0) return
 
     setBatchLoading(true)
@@ -783,6 +784,17 @@ function ArticlesContent() {
               >
                 <RefreshCw className={cn("w-4 h-4 mr-1.5", batchLoading && "animate-spin")} />
                 批量抓取
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => executeBatchAction('forceRefresh')}
+                disabled={batchLoading}
+                className="h-8 px-3 rounded-full text-orange-500 hover:text-orange-600 hover:bg-orange-50"
+                title="使用配置的抓取策略（如 browserless）强制重抓"
+              >
+                <RefreshCcw className={cn("w-4 h-4 mr-1.5", batchLoading && "animate-spin")} />
+                强制抓取
               </Button>
               <Button
                 variant="ghost"

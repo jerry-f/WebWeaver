@@ -314,11 +314,13 @@ export async function discoverSite(
  *
  * @param sourceId - 信息源 ID
  * @param jobId - 任务 ID
+ * @param force - 强制重抓所有文章
  * @returns 操作结果
  */
 export async function startSiteCrawl(
   sourceId: string,
-  jobId: string
+  jobId: string,
+  force?: boolean
 ): Promise<{ success: boolean; message: string }> {
   const source = await prisma.source.findUnique({
     where: { id: sourceId }
@@ -370,7 +372,7 @@ export async function startSiteCrawl(
   console.log(`[SiteCrawl] 发现完成: ${totalProcessed} processed, ${totalDiscovered} discovered`)
 
   // 触发内容抓取
-  const fetchedCount = await triggerContentFetch(sourceId, jobId, fetchStrategy)
+  const fetchedCount = await triggerContentFetch(sourceId, jobId, fetchStrategy, force)
 
   // 发布完成状态
   await publishJobStatus({
@@ -397,15 +399,53 @@ export async function startSiteCrawl(
  *
  * @param sourceId - 信息源 ID
  * @param jobId - 任务 ID
+ * @param force - 强制重抓所有文章（包括已完成的）
  * @returns 入队的文章数量
  */
 export async function triggerContentFetch(
   sourceId: string,
   jobId: string,
-  strategy?: FetchStrategy
+  strategy?: FetchStrategy,
+  force?: boolean
 ): Promise<number> {
   let totalQueued = 0
   const BATCH_SIZE = 500
+
+  // 强制模式：直接抓取所有已关联的文章
+  if (force) {
+    console.log(`[SiteCrawl] ${sourceId}: 强制模式 - 重抓所有文章`)
+
+    // 获取该源下所有需要抓取的文章
+    const articles = await prisma.article.findMany({
+      where: { sourceId },
+      select: { id: true, url: true }
+    })
+
+    if (articles.length > 0) {
+      // 先将所有文章状态重置为 pending
+      await prisma.article.updateMany({
+        where: { sourceId },
+        data: { contentStatus: 'pending' }
+      })
+
+      const jobs = articles
+        .filter(a => a.url)
+        .map(a => ({
+          articleId: a.id,
+          url: a.url!,
+          sourceId,
+          strategy
+        }))
+
+      if (jobs.length > 0) {
+        await addFetchJobs(jobs)
+        totalQueued = jobs.length
+      }
+    }
+
+    console.log(`[SiteCrawl] ${sourceId}: 强制模式入队 ${totalQueued} 个任务`)
+    return totalQueued
+  }
 
   // 循环处理，避免 take 限制导致遗漏
   while (true) {
@@ -438,7 +478,7 @@ export async function triggerContentFetch(
     // 分离需要创建的和已存在的
     const toCreate: { sourceId: string; externalId: string; title: string; url: string; contentStatus: string }[] = []
     const crawlUrlUpdates: { crawlUrlId: string; articleId: string }[] = []
-    // 只收集需要抓取的文章 ID（新创建的 + 已存在但 pending 的）
+    // 只收集需要抓取的文章 ID（新创建的 + 已存在但 pending/failed 的）
     const articleIdsToFetch: Set<string> = new Set()
 
     for (const crawlUrl of urlsToProcess) {
@@ -446,8 +486,8 @@ export async function triggerContentFetch(
       if (existing) {
         // 文章已存在，关联 CrawlUrl
         crawlUrlUpdates.push({ crawlUrlId: crawlUrl.id, articleId: existing.id })
-        // 只有 contentStatus 为 pending 的才需要重新入队
-        if (existing.contentStatus === 'pending') {
+        // pending 或 failed 的需要重新入队
+        if (existing.contentStatus === 'pending' || existing.contentStatus === 'failed') {
           articleIdsToFetch.add(existing.id)
         }
       } else {

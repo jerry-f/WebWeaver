@@ -26,8 +26,8 @@ services:
     environment:
       # 最大并发浏览器会话数
       - MAX_CONCURRENT_SESSIONS=5
-      # 连接超时时间（毫秒）
-      - CONNECTION_TIMEOUT=60000
+      # 连接超时时间（毫秒）- SPA 页面可能需要更长时间
+      - CONNECTION_TIMEOUT=120000
       # 最大排队请求数
       - MAX_QUEUE_LENGTH=50
       # 预启动浏览器实例（减少冷启动时间）

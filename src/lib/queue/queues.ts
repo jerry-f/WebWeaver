@@ -60,6 +60,8 @@ export interface SourceFetchJobData {
   sourceId: string
   /** 触发方式 */
   triggeredBy: 'manual' | 'scheduled'
+  /** 强制重抓所有文章 */
+  force?: boolean
 }
 
 /**
@@ -198,20 +200,25 @@ export async function addFetchJob(data: FetchJobData): Promise<Job<FetchJobData>
 
 /**
  * 批量添加抓取任务
+ *
+ * @param jobs 任务列表
+ * @param force 是否强制添加（忽略重复检查，用于强制刷新场景）
  */
-export async function addFetchJobs(jobs: FetchJobData[]): Promise<Job<FetchJobData>[]> {
+export async function addFetchJobs(jobs: FetchJobData[], force = false): Promise<Job<FetchJobData>[]> {
   const queue = getFetchQueue()
+  const timestamp = force ? `_${Date.now()}` : ''
 
   const bulkJobs = jobs.map(data => ({
     name: `fetch_${data.articleId}`,
     data,
     opts: {
       priority: data.priority || 5,
-      jobId: `fetch_${data.articleId}`
+      jobId: `fetch_${data.articleId}${timestamp}`
     }
   }))
 
-  return queue.addBulk(bulkJobs)
+  const result = await queue.addBulk(bulkJobs)
+  return result
 }
 
 /**

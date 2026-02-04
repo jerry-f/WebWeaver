@@ -55,8 +55,25 @@ export async function GET(
 
       subscriber.on('message', messageHandler)
 
+      // 超时保护（5 分钟）
+      let isClosed = false
+      const timeout = setTimeout(() => {
+        if (isClosed) return
+        try {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: 'timeout', jobId })}\n\n`)
+          )
+        } catch {
+          // 忽略
+        }
+        cleanup()
+      }, 300000)
+
       // 清理函数
       const cleanup = async () => {
+        if (isClosed) return
+        isClosed = true
+        clearTimeout(timeout)
         try {
           subscriber.off('message', messageHandler)
           await subscriber.unsubscribe(CHANNELS.JOB_STATUS)
@@ -67,17 +84,8 @@ export async function GET(
         }
       }
 
-      // 超时保护（5 分钟）
-      const timeout = setTimeout(() => {
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ type: 'timeout', jobId })}\n\n`)
-        )
-        cleanup()
-      }, 300000)
-
       // 客户端断开连接时清理
       request.signal.addEventListener('abort', () => {
-        clearTimeout(timeout)
         cleanup()
       })
     }

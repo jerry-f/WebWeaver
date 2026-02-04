@@ -2,13 +2,22 @@ import { NextRequest, NextResponse } from 'next/server'
 import { fetchSource } from '@/lib/fetchers'
 
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  
+
   try {
-    const result = await fetchSource(id)
+    // 解析请求体获取 force 参数
+    let force = false
+    try {
+      const body = await req.json()
+      force = body.force === true
+    } catch {
+      // 没有请求体，使用默认值
+    }
+
+    const result = await fetchSource(id, { force })
     return NextResponse.json(result)
   } catch (e) {
     return NextResponse.json(

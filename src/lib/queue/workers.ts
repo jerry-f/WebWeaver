@@ -236,9 +236,9 @@ async function processCredentialJob(job: Job<CredentialJobData>): Promise<void> 
  * 处理 RSS/Scrape/SiteCrawl 列表抓取
  */
 async function processSourceFetchJob(job: Job<SourceFetchJobData>): Promise<void> {
-  const { jobId, sourceId, triggeredBy } = job.data
+  const { jobId, sourceId, triggeredBy, force } = job.data
 
-  console.log(`[SourceFetchWorker] Processing job ${jobId} for source ${sourceId} (${triggeredBy})`)
+  console.log(`[SourceFetchWorker] Processing job ${jobId} for source ${sourceId} (${triggeredBy}, force=${force})`)
 
   // 1. 发布开始状态
   await publishJobStatus({
@@ -280,7 +280,7 @@ async function processSourceFetchJob(job: Job<SourceFetchJobData>): Promise<void
 
       case 'sitecrawl':
         // SiteCrawl 有独立的任务流
-        await startSiteCrawl(sourceId, jobId)
+        await startSiteCrawl(sourceId, jobId, job.data.force)
         console.log(`[SourceFetchWorker] SiteCrawl started for ${source.name}`)
         return
 

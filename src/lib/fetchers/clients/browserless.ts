@@ -1,8 +1,11 @@
 /**
- * Browserless 客户端
+ * Browserless 客户端 (Stealth 模式)
  *
  * 通过 Browserless 服务进行动态页面渲染
  * 用于处理需要 JavaScript 渲染的 SPA 页面
+ *
+ * 【重要】使用 /function API + Stealth 伪装
+ * 解决反爬虫检测导致的超时和拿不到数据问题
  */
 
 import { Readability } from '@mozilla/readability'
@@ -28,6 +31,8 @@ export interface BrowserlessConfig {
   }
   /** 阻止的资源类型 */
   blockResources?: string[]
+  /** 是否启用 Stealth 模式（默认 true） */
+  stealth?: boolean
 }
 
 /**
@@ -61,7 +66,7 @@ export interface BrowserlessFullTextResult {
  * 默认配置
  */
 const DEFAULT_CONFIG: BrowserlessConfig = {
-  endpoint: process.env.BROWSERLESS_URL || 'ws://localhost:3300',
+  endpoint: process.env.BROWSERLESS_URL || 'http://localhost:3300',
   timeout: 30000,
   waitForNetworkIdle: true,
   scroll: {
@@ -69,8 +74,52 @@ const DEFAULT_CONFIG: BrowserlessConfig = {
     maxScrolls: 3,
     scrollDelay: 1000
   },
-  blockResources: ['font', 'media']
+  blockResources: ['font', 'media'],
+  stealth: true
 }
+
+/**
+ * Stealth 伪装脚本
+ * 隐藏自动化特征，绕过反爬虫检测
+ */
+const STEALTH_SCRIPT = `
+  // 1. 隐藏 webdriver 标志（最重要）
+  Object.defineProperty(navigator, 'webdriver', { get: () => false });
+
+  // 2. 添加 chrome 对象
+  window.chrome = { runtime: {}, loadTimes: () => {}, csi: () => {} };
+
+  // 3. 模拟正常的语言设置
+  Object.defineProperty(navigator, 'languages', {
+    get: () => ['zh-CN', 'zh', 'en-US', 'en'],
+  });
+
+  // 4. 模拟插件
+  Object.defineProperty(navigator, 'plugins', {
+    get: () => {
+      const plugins = [
+        { name: 'Chrome PDF Plugin' },
+        { name: 'Chrome PDF Viewer' },
+        { name: 'Native Client' }
+      ];
+      plugins.length = 3;
+      return plugins;
+    },
+  });
+
+  // 5. 修复 permissions API
+  const originalQuery = navigator.permissions.query;
+  navigator.permissions.query = (parameters) => (
+    parameters.name === 'notifications'
+      ? Promise.resolve({ state: Notification.permission })
+      : originalQuery(parameters)
+  );
+`
+
+/**
+ * 默认的 UserAgent（模拟 Windows Chrome）
+ */
+const DEFAULT_USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
 
 /**
  * 懒加载属性列表
@@ -86,7 +135,7 @@ const LAZY_ATTRIBUTES = [
 ]
 
 /**
- * 通过 Browserless 渲染页面
+ * 通过 Browserless 渲染页面（使用 Stealth 模式）
  *
  * @param url - 目标 URL
  * @param config - 配置选项
@@ -100,31 +149,36 @@ export async function renderPage(
   const startTime = Date.now()
 
   try {
-    // 构建 Browserless content API 请求
-    // 使用 HTTP API 而非 WebSocket（更简单）
+    // 使用 HTTP 端点
     const httpEndpoint = cfg.endpoint
       .replace('ws://', 'http://')
       .replace('wss://', 'https://')
 
-    const response = await fetch(`${httpEndpoint}/content`, {
+    const waitUntil = cfg.waitForNetworkIdle ? 'networkidle2' : 'domcontentloaded'
+    const timeout = cfg.timeout || 30000
+
+    // 构建 Stealth 模式的脚本
+    const stealthSetup = cfg.stealth !== false ? `
+      await page.evaluateOnNewDocument(() => {
+        ${STEALTH_SCRIPT}
+      });
+      await page.setUserAgent('${DEFAULT_USER_AGENT}');
+    ` : ''
+
+    const code = `
+      module.exports = async ({ page, context }) => {
+        ${stealthSetup}
+        await page.setViewport({ width: 1280, height: 800 });
+        await page.goto(context.url, { waitUntil: '${waitUntil}', timeout: ${timeout} });
+        return { data: await page.content(), type: 'text/html' };
+      };
+    `
+
+    const response = await fetch(`${httpEndpoint}/function`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        url,
-        // 等待选项
-        waitForTimeout: cfg.waitForNetworkIdle ? 3000 : 1000,
-        waitForSelector: 'body',
-        // 阻止不必要的资源
-        rejectResourceTypes: cfg.blockResources,
-        // 浏览器配置
-        gotoOptions: {
-          waitUntil: cfg.waitForNetworkIdle ? 'networkidle2' : 'domcontentloaded',
-          timeout: cfg.timeout
-        }
-      }),
-      signal: AbortSignal.timeout(cfg.timeout || 30000)
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code, context: { url } }),
+      signal: AbortSignal.timeout(timeout + 5000)
     })
 
     if (!response.ok) {
@@ -137,7 +191,7 @@ export async function renderPage(
 
     return {
       html,
-      finalUrl: url, // Browserless content API 不返回最终 URL
+      finalUrl: url,
       duration
     }
   } catch (error) {
@@ -147,7 +201,7 @@ export async function renderPage(
 }
 
 /**
- * 通过 Browserless 渲染并滚动加载页面
+ * 通过 Browserless 渲染并滚动加载页面（使用 Stealth 模式）
  *
  * 用于处理无限滚动的页面
  *
@@ -171,43 +225,55 @@ export async function renderWithScroll(
       .replace('ws://', 'http://')
       .replace('wss://', 'https://')
 
-    // 使用 function API 执行自定义脚本
+    const maxScrolls = cfg.scroll?.maxScrolls || 3
+    const scrollDelay = cfg.scroll?.scrollDelay || 1000
+    const timeout = cfg.timeout || 30000
+
+    // 构建 Stealth 模式的脚本
+    const stealthSetup = cfg.stealth !== false ? `
+      await page.evaluateOnNewDocument(() => {
+        ${STEALTH_SCRIPT}
+      });
+      await page.setUserAgent('${DEFAULT_USER_AGENT}');
+    ` : ''
+
+    const code = `
+      module.exports = async ({ page, context }) => {
+        const { url, maxScrolls, scrollDelay } = context;
+
+        ${stealthSetup}
+        await page.setViewport({ width: 1280, height: 800 });
+
+        await page.goto(url, {
+          waitUntil: 'networkidle2',
+          timeout: ${timeout}
+        });
+
+        // 滚动加载
+        for (let i = 0; i < maxScrolls; i++) {
+          await page.evaluate(() => {
+            window.scrollTo(0, document.body.scrollHeight);
+          });
+          await new Promise(r => setTimeout(r, scrollDelay));
+        }
+
+        // 回到顶部
+        await page.evaluate(() => window.scrollTo(0, 0));
+
+        return { data: await page.content(), type: 'text/html' };
+      };
+    `
+
+    const totalTimeout = timeout + maxScrolls * scrollDelay + 5000
+
     const response = await fetch(`${httpEndpoint}/function`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        code: `
-          module.exports = async ({ page, context }) => {
-            const { url, maxScrolls, scrollDelay } = context;
-
-            await page.goto(url, {
-              waitUntil: 'networkidle2',
-              timeout: 30000
-            });
-
-            // 滚动加载
-            for (let i = 0; i < maxScrolls; i++) {
-              await page.evaluate(() => {
-                window.scrollTo(0, document.body.scrollHeight);
-              });
-              await new Promise(r => setTimeout(r, scrollDelay));
-            }
-
-            // 回到顶部
-            await page.evaluate(() => window.scrollTo(0, 0));
-
-            return { data: await page.content(), type: 'text/html' };
-          };
-        `,
-        context: {
-          url,
-          maxScrolls: cfg.scroll?.maxScrolls || 3,
-          scrollDelay: cfg.scroll?.scrollDelay || 1000
-        }
+        code,
+        context: { url, maxScrolls, scrollDelay }
       }),
-      signal: AbortSignal.timeout((cfg.timeout || 30000) + (cfg.scroll?.maxScrolls || 3) * (cfg.scroll?.scrollDelay || 1000))
+      signal: AbortSignal.timeout(totalTimeout)
     })
 
     if (!response.ok) {

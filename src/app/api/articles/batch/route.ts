@@ -3,12 +3,15 @@ import { prisma } from '@/lib/prisma'
 import { fetchFullText } from '@/lib/fetchers/fulltext'
 import { generateSummary } from '@/lib/ai/summarizer'
 import { isAIEnabled } from '@/lib/ai'
+import { addFetchJobs } from '@/lib/queue/queues'
+import type { FetchStrategy } from '@/lib/fetchers/types'
 
 /**
  * 批量操作文章
  *
  * 支持的操作：
  * - refresh: 批量刷新文章内容（重新抓取全文）
+ * - forceRefresh: 强制抓取（使用配置的 strategy，通过队列系统）
  * - delete: 批量删除文章
  * - markRead: 批量标记为已读
  * - markUnread: 批量标记为未读
@@ -19,7 +22,7 @@ export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
     const { action, articleIds } = body as {
-      action: 'refresh' | 'delete' | 'markRead' | 'markUnread' | 'star' | 'unstar'
+      action: 'refresh' | 'forceRefresh' | 'delete' | 'markRead' | 'markUnread' | 'star' | 'unstar'
       articleIds: string[]
     }
 
@@ -52,6 +55,9 @@ export async function POST(req: NextRequest) {
         break
       case 'refresh':
         result = await batchRefresh(articleIds)
+        break
+      case 'forceRefresh':
+        result = await batchForceRefresh(articleIds)
         break
       default:
         return NextResponse.json({ error: '不支持的操作' }, { status: 400 })
@@ -144,5 +150,57 @@ async function batchRefresh(articleIds: string[]) {
     success: errors.length === 0,
     count: successCount,
     errors: errors.length > 0 ? errors : undefined
+  }
+}
+
+// 强制抓取（通过队列系统，使用配置的 strategy）
+async function batchForceRefresh(articleIds: string[]) {
+  // 查询文章及其 source 配置
+  const articles = await prisma.article.findMany({
+    where: { id: { in: articleIds } },
+    select: {
+      id: true,
+      url: true,
+      sourceId: true,
+      source: { select: { config: true } }
+    }
+  })
+
+  if (articles.length === 0) {
+    return { success: false, count: 0, errors: ['未找到文章'] }
+  }
+
+  // 按 sourceId 分组，获取各源的 strategy
+  const sourceStrategyMap = new Map<string, FetchStrategy | undefined>()
+  for (const article of articles) {
+    if (!sourceStrategyMap.has(article.sourceId)) {
+      const config = article.source?.config ? JSON.parse(article.source.config) : {}
+      sourceStrategyMap.set(article.sourceId, config.fetch?.strategy)
+    }
+  }
+
+  // 重置文章状态为 pending
+  await prisma.article.updateMany({
+    where: { id: { in: articleIds } },
+    data: { contentStatus: 'pending' }
+  })
+
+  // 构建抓取任务
+  const jobs = articles
+    .filter(a => a.url)
+    .map(a => ({
+      articleId: a.id,
+      url: a.url!,
+      sourceId: a.sourceId,
+      strategy: sourceStrategyMap.get(a.sourceId)
+    }))
+
+  if (jobs.length > 0) {
+    await addFetchJobs(jobs, true)
+  }
+
+  return {
+    success: true,
+    count: jobs.length
   }
 }
