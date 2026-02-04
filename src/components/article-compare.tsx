@@ -111,7 +111,7 @@ export default function ArticleCompare({
   );
 
   return (
-    <div className="fixed inset-0 z-50 bg-background flex flex-col">
+    <div data-reading-theme="default" className="fixed inset-0 z-50 bg-background flex flex-col reading-theme-container">
       {/* 顶部工具栏 */}
       <div className="flex items-center justify-between px-4 py-3 border-b bg-background">
         <div className="flex items-center gap-4">

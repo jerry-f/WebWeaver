@@ -3,12 +3,14 @@ import { prisma } from '@/lib/prisma'
 import { fetchRSS } from '@/lib/fetchers/rss'
 import { generateSummary } from '@/lib/ai/summarizer'
 import { isAIEnabled } from '@/lib/ai'
-import { getScraperClient } from '@/lib/fetchers/clients/scraper-adapter'
+import { getUnifiedFetcher, type UnifiedFetchOptions } from '@/lib/fetchers/unified-fetcher'
+import type { FetchStrategy } from '@/lib/fetchers/types'
 
 /**
- * 刷新单篇文章内容
+ * 获取文章最新内容用于对比（不更新数据库）
  *
  * 从原始源重新抓取文章内容，生成新的 AI 摘要，返回新旧版本用于对比
+ * 用户确认后才通过 /confirm 接口更新数据库
  */
 export async function POST(
   _req: NextRequest,
@@ -64,26 +66,46 @@ export async function POST(
       }
     }
 
-    // 方式2：尝试通过 Go 抓取服务获取全文
+    // 方式2：使用 UnifiedFetcher 获取全文（根据 source 配置选择策略）
+    // console.log('article:', article);
     if (article.url) {
       try {
-        const scraperClient = getScraperClient()
-        const isAvailable = await scraperClient.isAvailable()
+        const fetcher = getUnifiedFetcher()
 
-        if (isAvailable) {
-          const fullText = await scraperClient.fetch({ url: article.url })
-          if (fullText && fullText.content) {
-            newContent = fullText.content || ''
-            // 如果 Go 服务返回了标题，也可以更新
-            if (fullText.title && !newTitle) {
-            newTitle = fullText.title
+        // 根据 source 的 config 决定抓取策略
+        const fetchOptions: UnifiedFetchOptions = {
+          sourceId: article.sourceId || undefined
+        }
+
+        // 从 source.config.fetch.strategy 获取抓取策略
+        if (article.source?.config) {
+          try {
+            const config = JSON.parse(article.source.config)
+            if (config.fetch?.strategy) {
+              fetchOptions.strategy = config.fetch.strategy as FetchStrategy
+              console.log(`[refresh] 使用 source 配置的抓取策略: ${fetchOptions.strategy}`)
             }
+          } catch {
+            // config 解析失败，使用默认策略
           }
+        }
+
+        console.log(`[refresh] 使用 UnifiedFetcher 抓取: ${article.url}, 策略: ${fetchOptions.strategy || 'auto'}`)
+
+        const result = await fetcher.fetch(article.url, fetchOptions)
+
+        if (result.success && result.content) {
+          newContent = result.content
+          // 如果返回了标题，也可以更新
+          if (result.title) {
+            newTitle = result.title
+          }
+          console.log(`[refresh] 抓取成功，使用策略: ${result.strategy}`)
         } else {
-          console.warn('[refresh] Go 抓取服务不可用，跳过全文抓取')
+          console.warn(`[refresh] 抓取失败: ${result.error}`)
         }
       } catch (e) {
-        console.error('[refresh] Go 抓取服务全文抓取失败:', e)
+        console.error('[refresh] UnifiedFetcher 全文抓取失败:', e)
       }
     }
 
@@ -101,43 +123,28 @@ export async function POST(
       }
     }
 
-    // 更新文章内容
-    const updatedArticle = await prisma.article.update({
-      where: { id },
-      data: {
-        title: newTitle,
-        content: newContent,
-        imageUrl: newImageUrl,
-        author: newAuthor,
-        publishedAt: newPublishedAt,
-        summary: newSummary,
-        tags: newTags,
-        category: newCategory,
-        summaryStatus: newSummary ? 'completed' : 'failed',
-      },
-      include: { source: { select: { name: true } } }
-    })
+    // 构建新版本数据（不更新数据库）
+    const newVersion = {
+      title: newTitle,
+      content: newContent,
+      summary: newSummary,
+      tags: newTags,
+      category: newCategory,
+      imageUrl: newImageUrl,
+      author: newAuthor,
+      publishedAt: newPublishedAt,
+    }
 
-    // 返回新旧版本用于对比
+    // 返回新旧版本用于对比（不更新数据库）
     return NextResponse.json({
       success: true,
       oldVersion,
-      newVersion: {
-        title: updatedArticle.title,
-        content: updatedArticle.content,
-        summary: updatedArticle.summary,
-        tags: updatedArticle.tags,
-        category: updatedArticle.category,
-        imageUrl: updatedArticle.imageUrl,
-        author: updatedArticle.author,
-        publishedAt: updatedArticle.publishedAt,
-      },
-      article: updatedArticle,
+      newVersion,
     })
   } catch (error) {
-    console.error('刷新文章失败:', error)
+    console.error('获取最新内容失败:', error)
     return NextResponse.json({
-      error: '刷新文章失败',
+      error: '获取最新内容失败',
       message: error instanceof Error ? error.message : '未知错误'
     }, { status: 500 })
   }

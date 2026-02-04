@@ -161,7 +161,7 @@ export default function ArticleDetailPage() {
     setArticles(prev => prev.map(a => a.id === article.id ? { ...a, starred: newStarred } : a))
   }, [article])
 
-  // 刷新文章内容（重新抓取并对比）
+  // 刷新文章内容（重新抓取并对比，不更新数据库）
   const refreshArticle = useCallback(async () => {
     if (!article || refreshing) return
     setRefreshing(true)
@@ -174,15 +174,37 @@ export default function ArticleDetailPage() {
             oldVersion: data.oldVersion,
             newVersion: data.newVersion,
           })
-          setArticle(data.article)
+          // 不再立即更新 article，等用户确认后再更新
         }
       }
     } catch (e) {
-      console.error('刷新文章失败:', e)
+      console.error('获取最新内容失败:', e)
     } finally {
       setRefreshing(false)
     }
   }, [article, refreshing])
+
+  // 确认更新文章（用户在对比视图中点击确认后调用）
+  const confirmUpdate = useCallback(async () => {
+    if (!article || !compareData) return
+    try {
+      const res = await fetch(`/api/articles/${article.id}/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newVersion: compareData.newVersion })
+      })
+      if (res.ok) {
+        const data = await res.json()
+        if (data.success) {
+          setArticle(data.article)
+        }
+      }
+    } catch (e) {
+      console.error('确认更新失败:', e)
+    } finally {
+      setCompareData(null)
+    }
+  }, [article, compareData])
 
   // 返回列表（保持筛选条件）
   const goBack = useCallback(() => {
@@ -288,7 +310,7 @@ export default function ArticleDetailPage() {
           oldVersion={compareData.oldVersion}
           newVersion={compareData.newVersion}
           onClose={() => setCompareData(null)}
-          onAccept={() => setCompareData(null)}
+          onAccept={confirmUpdate}
         />
       )}
 

@@ -38,7 +38,7 @@ export function ReadingThemeProvider({ children }: { children: React.ReactNode }
   if (!mounted) {
     return (
       <ReadingThemeContext.Provider value={value}>
-        <div data-reading-theme={DEFAULT_READING_THEME} className="reading-theme-container">
+        <div  data-reading-theme={DEFAULT_READING_THEME} className="reading-theme-container reading-theme-context-wrapper">
           {children}
         </div>
       </ReadingThemeContext.Provider>
@@ -47,7 +47,7 @@ export function ReadingThemeProvider({ children }: { children: React.ReactNode }
 
   return (
     <ReadingThemeContext.Provider value={value}>
-      <div data-reading-theme={theme} className="reading-theme-container">
+      <div data-reading-theme={theme} className="reading-theme-container reading-theme-context-wrapper">
         {children}
       </div>
     </ReadingThemeContext.Provider>

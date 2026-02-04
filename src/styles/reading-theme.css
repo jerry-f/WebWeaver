@@ -3,7 +3,8 @@
    ================================ */
 
 /* 阅读主题容器基础样式 */
-.reading-theme-container {
+/* .reading-theme-container { */
+.reading-theme-context-wrapper {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
