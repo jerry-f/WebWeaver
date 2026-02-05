@@ -123,27 +123,43 @@ export class WebSocketServer {
   async shutdown(): Promise<void> {
     console.log('[WebSocket] 正在关闭...')
 
-    // 通知所有客户端服务即将重启
+    // 1. 先取消 Redis 订阅，停止接收新消息
+    try {
+      await this.subscriber.unsubscribe()
+    } catch (error) {
+      console.error('[WebSocket] 取消订阅失败:', error)
+    }
+
+    // 2. 通知所有客户端服务即将重启
     this.broadcast('server:restart', {
       message: '服务即将重启，请稍候...',
       reconnectDelay: 3000,
     })
 
-    // 等待消息发送
-    await new Promise((resolve) => setTimeout(resolve, 2000))
+    // 3. 等待消息发送
+    await new Promise((resolve) => setTimeout(resolve, 1000))
 
-    // 关闭 Socket.IO
+    // 4. 关闭 Socket.IO（会断开所有客户端连接）
     await new Promise<void>((resolve) => {
       this.io.close(() => resolve())
     })
 
-    // 关闭 Redis 连接
-    await this.subscriber.unsubscribe()
-    await this.subscriber.quit()
-    await this.pubClient.quit()
-    await this.subClient.quit()
+    // 5. 关闭 Redis 连接（使用 disconnect 而非 quit，更可靠）
+    const closeRedis = async (client: IORedis, name: string) => {
+      try {
+        client.disconnect()
+      } catch (error) {
+        console.error(`[WebSocket] 关闭 ${name} 失败:`, error)
+      }
+    }
 
-    // 关闭 HTTP 服务器
+    await Promise.all([
+      closeRedis(this.subscriber, 'subscriber'),
+      closeRedis(this.pubClient, 'pubClient'),
+      closeRedis(this.subClient, 'subClient'),
+    ])
+
+    // 6. 关闭 HTTP 服务器
     await new Promise<void>((resolve) => {
       this.httpServer.close(() => resolve())
     })

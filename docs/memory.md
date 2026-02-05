@@ -40,3 +40,16 @@ NextAuth 的 session token cookie 默认设置为 **HttpOnly**，JavaScript 无�
 
 - Base64 方式没有过期时间校验，仅适用于开发环境
 - 生产环境建议确保 JWT token 正常工作
+
+## 查看表字段
+
+```bash
+node -e "
+const { PrismaClient } = require('@prisma/client');
+const prisma = new PrismaClient();
+prisma.\$queryRaw\`SELECT name, type FROM pragma_table_info('Article')\`.then(r => {
+  console.log('Article 表字段:');
+  r.forEach(col => console.log('  -', col.name));
+}).finally(() => prisma.\$disconnect());
+"
+```

@@ -51,21 +51,41 @@ const DEFAULT_CONFIG: WorkerConfig = {
 async function processFetchJob(job: Job<FetchJobData>): Promise<void> {
   const { articleId, url, sourceId, strategy } = job.data
   const domain = extractDomainFromUrl(url)
+  const jobId = `fetch_${articleId}_${Date.now()}`
 
-  console.log(`[FetchWorker] Processing job ${job.id}: ${url} (domain: ${domain})`)
+  console.log(`[FetchWorker] 处理作业 ${job.id}：${url}（域：${domain}）`)
+
+  // 发布开始状态
+  await publishJobStatus({
+    jobId,
+    sourceId,
+    type: 'article_fetch',
+    status: 'started',
+    timestamp: Date.now()
+  })
 
   // 1. 检查熔断状态
   if (domainScheduler.isCircuitOpen(domain)) {
     console.warn(`[FetchWorker] Domain ${domain} is circuit-open, skipping job ${job.id}`)
-    throw new Error(`Domain ${domain} is temporarily blocked due to repeated failures`)
+    await publishJobStatus({
+      jobId,
+      sourceId,
+      type: 'article_fetch',
+      status: 'failed',
+      error: `Domain ${domain} is temporarily blocked`,
+      timestamp: Date.now()
+    })
+    throw new Error(`域 ${domain} 由于多次失败而被暂时阻止`)
   }
 
-  // 2. 获取域名许可（等待限速）
-  await domainScheduler.acquireWithWait(domain)
 
   try {
+    // 2. 获取域名许可（等待限速）
+    await domainScheduler.acquireWithWait(domain)
+
     // 3. 使用统一抓取器（自动处理凭证和策略选择）
     const fetcher = getUnifiedFetcher()
+    console.log('[FetchWorker] 使用统一抓取器抓取:', { url, strategy })
     const result = await fetcher.fetch(url, {
       sourceId,
       strategy: strategy || 'auto',
@@ -73,26 +93,43 @@ async function processFetchJob(job: Job<FetchJobData>): Promise<void> {
     })
 
     if (result.success && result.content) {
+      console.log('[FetchWorker] 抓取成功:', { articleId, url, strategy: result.strategy, duration: result.duration })
       // 4. 更新数据库
-      await prisma.article.update({
-        where: { id: articleId },
-        data: {
+      const updateInfo: any = {
           content: result.content,
           textContent: result.textContent,
           contentStatus: 'completed',
           fetchStrategy: result.strategy,
           fetchDuration: result.duration
-        }
+      }
+      // TODO: 需要判断文章的类型， 如果文章是 sitecrawl 源抓取任务， 则更新标题
+      // if( result.title ){
+      //   updateInfo['title'] = result.title
+      // }
+      await prisma.article.update({
+        where: { id: articleId },
+        data: updateInfo
       })
 
       // 5. 报告成功（重置退避）
       domainScheduler.reportSuccess(domain)
 
-      // 6. 将文章加入 AI 摘要队列
+      // 6. 将文章加入 AI 摘要队列(TODO: 这里可能需要添加到独立的摘要队列）)
       queueArticleForSummary(articleId)
+
+      // 发布完成状态
+      await publishJobStatus({
+        jobId,
+        sourceId,
+        type: 'article_fetch',
+        status: 'completed',
+        progress: { current: 1, total: 1 },
+        timestamp: Date.now()
+      })
 
       console.log(`[FetchWorker] Completed job ${job.id}: ${result.strategy}, ${result.duration}ms`)
     } else {
+      console.warn(`[FetchWorker] 抓取失败: ${articleId}, ${url}, error: ${result.error}`)
       throw new Error(result.error || 'Failed to fetch content')
     }
   } catch (error) {
@@ -109,6 +146,16 @@ async function processFetchJob(job: Job<FetchJobData>): Promise<void> {
       }
     })
 
+    // 发布失败状态
+    await publishJobStatus({
+      jobId,
+      sourceId,
+      type: 'article_fetch',
+      status: 'failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: Date.now()
+    })
+
     throw error
   } finally {
     // 8. 释放许可
@@ -121,18 +168,38 @@ async function processFetchJob(job: Job<FetchJobData>): Promise<void> {
  */
 async function processSummaryJob(job: Job<SummaryJobData>): Promise<void> {
   const { articleId, content } = job.data
+  const jobId = `summary_${articleId}_${Date.now()}`
 
   console.log(`[SummaryWorker] Processing job ${job.id}`)
 
+  // 发布开始状态
+  await publishJobStatus({
+    jobId,
+    sourceId: '',
+    type: 'article_fetch', // 使用 article_fetch 类型，因为 summary 不在定义中
+    status: 'started',
+    timestamp: Date.now()
+  })
+
   try {
-    // 这里集成 AI 摘要生成逻辑
+    // TODO: 这里集成 AI 摘要生成逻辑
     // 暂时跳过，保留接口
 
     await prisma.article.update({
       where: { id: articleId },
       data: {
-        summaryStatus: 'completed'
+        summaryStatus: 'completed' // 标记为已完成
       }
+    })
+
+    // 发布完成状态
+    await publishJobStatus({
+      jobId,
+      sourceId: '',
+      type: 'article_fetch',
+      status: 'completed',
+      progress: { current: 1, total: 1 },
+      timestamp: Date.now()
     })
 
     console.log(`[SummaryWorker] Completed job ${job.id}`)
@@ -144,6 +211,16 @@ async function processSummaryJob(job: Job<SummaryJobData>): Promise<void> {
       data: {
         summaryStatus: 'failed'
       }
+    })
+
+    // 发布失败状态
+    await publishJobStatus({
+      jobId,
+      sourceId: '',
+      type: 'article_fetch',
+      status: 'failed',
+      error: error instanceof Error ? error.message : 'Unknown error',
+      timestamp: Date.now()
     })
 
     throw error
@@ -403,8 +480,16 @@ export function startFetchWorker(config: WorkerConfig = {}): Worker<FetchJobData
     QUEUE_NAMES.FETCH,
     processFetchJob,
     {
+      // Redis 连接配置
       connection: getRedisConnection(),
-      concurrency: cfg.concurrency
+      // 并发数：同时处理多少个任务
+      concurrency: cfg.concurrency,
+      // 任务锁超时时间：5分钟后自动释放锁，任务变为 stalled
+      lockDuration: 5 * 60 * 1000,
+      // stalled 检查间隔：每30秒检查一次
+      stalledInterval: 30 * 1000,
+      // 最大 stalled 次数，超过则标记为失败
+      maxStalledCount: 1
     }
   )
 
@@ -506,7 +591,14 @@ export function startSourceFetchWorker(config: WorkerConfig = {}): Worker<Source
     processSourceFetchJob,
     {
       connection: getRedisConnection(),
-      concurrency: cfg.concurrency
+      // 并发数：同时处理多少个任务
+      concurrency: cfg.concurrency,
+      // 任务锁超时：10分钟后自动释放锁（源抓取可能耗时更长）
+      lockDuration: 10 * 60 * 1000,
+      // stalled 检查间隔：每30秒检查一次
+      stalledInterval: 30 * 1000,
+      // 最大 stalled 次数，超过则标记为失败
+      maxStalledCount: 1
     }
   )
 
@@ -531,10 +623,10 @@ export function startSourceFetchWorker(config: WorkerConfig = {}): Worker<Source
  * 启动所有 Worker
  */
 export function startAllWorkers(config: WorkerConfig = {}): void {
-  startFetchWorker(config)
-  startSummaryWorker(config)
-  startCredentialWorker(config)
-  startSourceFetchWorker(config)
+  startFetchWorker(config) //  抓取任务
+  startSummaryWorker(config) //  摘要任务
+  startCredentialWorker(config) //  凭证刷新任务
+  startSourceFetchWorker(config) //  源抓取任务
 }
 
 /**

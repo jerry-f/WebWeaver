@@ -130,10 +130,24 @@ export interface JobStatusMessage {
 /**
  * 发布任务状态消息
  * 用于 Worker 通知前端任务进度
+ * 同时存储到 Redis 供前端轮询
  */
 export async function publishJobStatus(message: JobStatusMessage): Promise<void> {
   const redis = getRedisConnection()
+
+  // 发布到 Pub/Sub 通道
   await redis.publish(CHANNELS.JOB_STATUS, JSON.stringify(message))
+
+  // 同时存储到 Redis Hash，供前端轮询（TTL 5分钟）
+  const key = `newsflow:job:progress:${message.jobId}`
+  await redis.set(key, JSON.stringify(message), 'EX', 300)
+
+  // 维护活跃任务列表
+  if (message.status === 'started' || message.status === 'progress') {
+    await redis.sadd('newsflow:active-jobs', message.jobId)
+  } else if (message.status === 'completed' || message.status === 'failed') {
+    await redis.srem('newsflow:active-jobs', message.jobId)
+  }
 }
 
 /**
@@ -163,4 +177,38 @@ export async function publishConfigReload(configType: string): Promise<void> {
   const redis = getRedisConnection()
   await redis.publish(CHANNELS.CONFIG_RELOAD, configType)
   console.log(`[Redis] 已发布配置重载消息: ${configType}`)
+}
+
+/**
+ * 获取所有活跃任务的进度
+ */
+export async function getActiveJobsProgress(): Promise<JobStatusMessage[]> {
+  const redis = getRedisConnection()
+
+  // 获取活跃任务列表
+  const activeJobIds = await redis.smembers('newsflow:active-jobs')
+
+  if (activeJobIds.length === 0) {
+    return []
+  }
+
+  // 批量获取进度
+  const progressList: JobStatusMessage[] = []
+
+  for (const jobId of activeJobIds) {
+    const key = `newsflow:job:progress:${jobId}`
+    const data = await redis.get(key)
+    if (data) {
+      try {
+        progressList.push(JSON.parse(data))
+      } catch {
+        // 忽略解析错误
+      }
+    } else {
+      // 进度已过期，从活跃列表移除
+      await redis.srem('newsflow:active-jobs', jobId)
+    }
+  }
+
+  return progressList
 }

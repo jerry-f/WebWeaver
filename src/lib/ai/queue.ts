@@ -92,9 +92,9 @@ async function processArticle(articleId: string): Promise<void> {
       await prisma.article.update({
         where: { id: articleId },
         data: {
-          summary: result.summary,
-          tags: JSON.stringify(result.tags),
-          category: result.category,
+          summary: result.summary, // 保存生成的摘要
+          tags: JSON.stringify(result.tags), // 保存生成的标签
+          category: result.category, // 更新分类
           summaryStatus: 'completed'
         }
       })

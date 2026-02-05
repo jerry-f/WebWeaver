@@ -73,7 +73,7 @@ export async function GET() {
 
 /**
  * POST - 队列操作
- * body: { action: 'pause' | 'resume' | 'clean', queue: QueueKey }
+ * body: { action: 'pause' | 'resume' | 'clean' | 'cleanStalled', queue: QueueKey }
  */
 export async function POST(request: NextRequest) {
   const auth = await checkAdminAuth()
@@ -84,7 +84,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
     const { action, queue: queueKey } = body as {
-      action: 'pause' | 'resume' | 'clean'
+      action: 'pause' | 'resume' | 'clean' | 'cleanStalled'
       queue: QueueKey
     }
 
@@ -127,6 +127,43 @@ export async function POST(request: NextRequest) {
             delayed: delayedCount.length
           }
         })
+
+      case 'cleanStalled': {
+        // 清理卡住的活跃任务（超过指定时间的任务视为卡住）
+        const stalledThreshold = 10 * 60 * 1000 // 10 分钟
+        const now = Date.now()
+
+        // 获取所有活跃任务
+        const activeJobs = await queue.getJobs(['active'])
+        const stalledJobs = activeJobs.filter(job => {
+          // 任务开始处理的时间戳
+          const processedOn = job.processedOn || job.timestamp
+          return processedOn && (now - processedOn) > stalledThreshold
+        })
+
+        // 将卡住的任务移到失败队列
+        let cleanedCount = 0
+        for (const job of stalledJobs) {
+          try {
+            await job.moveToFailed(
+              new Error('任务执行超时，被强制清理'),
+              'stalled-cleanup'
+            )
+            cleanedCount++
+          } catch (err) {
+            console.error(`清理卡住任务失败: ${job.id}`, err)
+          }
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: `已清理 ${cleanedCount} 个卡住的任务`,
+          cleaned: {
+            stalled: cleanedCount,
+            total: stalledJobs.length
+          }
+        })
+      }
 
       default:
         return NextResponse.json(

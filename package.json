@@ -12,6 +12,7 @@
     "db:seed": "npx tsx prisma/seed.ts",
     "db:studio": "npx prisma studio",
     "db:push": "npx prisma db push",
+    "db:generate": "npx prisma generate",
     "test:scraper": "npx tsx scripts/test-scraper.ts",
     "test:services": "npx tsx scripts/test-scraper.ts --services",
     "test:fetch": "npx tsx scripts/test-scraper.ts --fetch",

@@ -127,7 +127,8 @@ export class UnifiedFetcher {
       result = await this.fetchLocal(url, options, authenticated)
     } else if (strategy === 'browserless') {
       // 使用 Browserless 浏览器渲染（用于 SPA 页面）
-      result = await this.fetchWithBrowserless(url, options, authenticated)
+      result = await this.fetchWithBrowserless(url, options, authenticated, headers['Cookie'])
+      // console.log('使用 Browserless 浏览器渲染: 已有结果', result.content ? '是' : '否')
     } else if (strategy === 'go' || (strategy === 'auto' && await this.isScraperAvailable())) {
       result = await this.fetchWithScraper(url, headers, options, authenticated)
 
@@ -261,11 +262,13 @@ export class UnifiedFetcher {
   private async fetchWithBrowserless(
     url: string,
     options: UnifiedFetchOptions,
-    authenticated: boolean
+    authenticated: boolean,
+    cookie?: string
   ): Promise<UnifiedFetchResult> {
     try {
       const result = await fetchFullTextWithBrowserless(url, {
-        timeout: options.timeout
+        timeout: options.timeout,
+        cookie
       })
 
       if (!result) {
@@ -370,6 +373,12 @@ export class UnifiedFetcher {
             duration: Date.now() - start,
             authenticated
           }
+        } else {
+          console.log('[UnifiedFetcher] fetchRaw 响应:', {
+            hasResponse: !!response,
+            error: response?.error,
+            statusCode: response?.statusCode
+          })
         }
 
         // 远程抓取失败，回退到本地
@@ -377,6 +386,8 @@ export class UnifiedFetcher {
       } catch (error) {
         console.error('[UnifiedFetcher] 远程 fetchRaw error:', error)
       }
+    } else {
+      console.log('[UnifiedFetcher] fetchRaw: 远程抓取服务不可用，使用本地抓取')
     }
 
     // 本地 fetch 回退（不带 TLS 指纹伪造）

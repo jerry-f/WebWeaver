@@ -183,6 +183,12 @@ async function fetchAndExtractLinks(
     domainScheduler.reportSuccess(domain)
     const html = result.body || ''
     return extractLinks(html, result.finalUrl || url, config, seedUrl)
+  } catch (err) {
+    // 注意：fetchRaw 可能直接抛异常（网络错误/超时/内部错误等），需要同样计入失败与退避
+    const message = err instanceof Error ? err.message : String(err)
+    console.warn(`[SiteCrawl] 抓取异常: ${url} - ${message}`)
+    domainScheduler.reportFailure(domain)
+    return []
   } finally {
     domainScheduler.release(domain)
   }
@@ -332,6 +338,7 @@ export async function startSiteCrawl(
 
   // 解析配置
   const parsedConfig = source.config ? JSON.parse(source.config) : {}
+  console.log('全站爬取配置:', parsedConfig);
   const config: SiteCrawlConfig = parsedConfig.siteCrawl || {}
   const fetchStrategy = parsedConfig.fetch?.strategy
 
@@ -438,13 +445,15 @@ export async function triggerContentFetch(
         }))
 
       if (jobs.length > 0) {
-        await addFetchJobs(jobs)
+        await addFetchJobs(jobs, force)
         totalQueued = jobs.length
       }
-    }
 
-    console.log(`[SiteCrawl] ${sourceId}: 强制模式入队 ${totalQueued} 个任务`)
-    return totalQueued
+      console.log(`[SiteCrawl] ${sourceId}: 强制模式入队 ${totalQueued} 个任务`)
+      return totalQueued
+    }else if(articles.length === 0){
+      console.log(`[SiteCrawl] ${sourceId}: 强制模式 - 没有发现文章，重新关联 URL`)
+    }
   }
 
   // 循环处理，避免 take 限制导致遗漏
@@ -454,12 +463,13 @@ export async function triggerContentFetch(
       where: {
         sourceId,
         status: 'completed',
-        articleId: null
+        // articleId: null
       },
       take: BATCH_SIZE
     })
 
     if (urlsToProcess.length === 0) {
+      console.log('[SiteCrawl] ${sourceId}: 无更多待处理 URL')
       break
     }
 
@@ -541,6 +551,7 @@ export async function triggerContentFetch(
       )
     }
 
+    console.log(`[SiteCrawl] ${sourceId}: 构建抓取任务`, articleIdsToFetch.size);
     // 构建抓取任务：只抓取需要抓取的文章
     if (articleIdsToFetch.size > 0) {
       // 查询需要抓取的文章详情

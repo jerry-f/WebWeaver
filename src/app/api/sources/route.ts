@@ -15,19 +15,20 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
-  const { 
-    name, 
-    type, 
-    url, 
-    category, 
+  const {
+    name,
+    type,
+    url,
+    category,
     fetchFullText,
-    config 
+    config: jsonConfig
   } = body
+  const config = jsonConfig ? JSON.parse(jsonConfig) : null
 
   // 验证必填字段
   if (!name || !url) {
     return NextResponse.json(
-      { error: 'Missing required fields: name, url' }, 
+      { error: 'Missing required fields: name, url' },
       { status: 400 }
     )
   }

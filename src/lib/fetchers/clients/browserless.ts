@@ -33,6 +33,8 @@ export interface BrowserlessConfig {
   blockResources?: string[]
   /** 是否启用 Stealth 模式（默认 true） */
   stealth?: boolean
+  /** Cookie 字符串（用于认证） */
+  cookie?: string
 }
 
 /**
@@ -159,15 +161,45 @@ export async function renderPage(
 
     // 构建 Stealth 模式的脚本
     const stealthSetup = cfg.stealth !== false ? `
-      await page.evaluateOnNewDocument(() => {
+      await page.evaluateOnNewDocument(function() {
         ${STEALTH_SCRIPT}
       });
       await page.setUserAgent('${DEFAULT_USER_AGENT}');
     ` : ''
 
+    // 在 TypeScript 端提取域名（Browserless 环境没有 URL 对象）
+    const domain = new URL(url).hostname
+
+    // 构建 Cookie 注入脚本（在 goto 之前设置）
+    const cookieSetup = cfg.cookie ? `
+      // 解析并注入 Cookie
+      if (context.cookie && context.domain) {
+        var cookiePairs = context.cookie.split(';');
+        var cookies = [];
+        for (var i = 0; i < cookiePairs.length; i++) {
+          var pair = cookiePairs[i].trim();
+          var eqIndex = pair.indexOf('=');
+          if (eqIndex > 0) {
+            cookies.push({
+              name: pair.substring(0, eqIndex).trim(),
+              value: pair.substring(eqIndex + 1).trim(),
+              domain: context.domain,
+              path: '/'
+            });
+          }
+        }
+        if (cookies.length > 0) {
+          await page.setCookie.apply(page, cookies);
+        }
+      }
+    ` : ''
+
     const code = `
-      module.exports = async ({ page, context }) => {
+      module.exports = async function(args) {
+        var page = args.page;
+        var context = args.context;
         ${stealthSetup}
+        ${cookieSetup}
         await page.setViewport({ width: 1280, height: 800 });
         await page.goto(context.url, { waitUntil: '${waitUntil}', timeout: ${timeout} });
         return { data: await page.content(), type: 'text/html' };
@@ -177,11 +209,20 @@ export async function renderPage(
     const response = await fetch(`${httpEndpoint}/function`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ code, context: { url } }),
+      body: JSON.stringify({ code, context: { url, domain, cookie: cfg.cookie } }),
       signal: AbortSignal.timeout(timeout + 5000)
     })
 
     if (!response.ok) {
+      const errorBody = await response.text()
+      console.log('Browserless render failed:',
+        {
+          url,
+          status: response.status,
+          statusText: response.statusText,
+          errorBody
+        }
+      )
       console.error('Browserless render failed:', response.status, response.statusText)
       return null
     }
@@ -231,17 +272,49 @@ export async function renderWithScroll(
 
     // 构建 Stealth 模式的脚本
     const stealthSetup = cfg.stealth !== false ? `
-      await page.evaluateOnNewDocument(() => {
+      await page.evaluateOnNewDocument(function() {
         ${STEALTH_SCRIPT}
       });
       await page.setUserAgent('${DEFAULT_USER_AGENT}');
     ` : ''
 
+    // 在 TypeScript 端提取域名（Browserless 环境没有 URL 对象）
+    const domain = new URL(url).hostname
+
+    // 构建 Cookie 注入脚本（在 goto 之前设置）
+    const cookieSetup = cfg.cookie ? `
+      // 解析并注入 Cookie
+      if (context.cookie && context.domain) {
+        var cookiePairs = context.cookie.split(';');
+        var cookies = [];
+        for (var i = 0; i < cookiePairs.length; i++) {
+          var pair = cookiePairs[i].trim();
+          var eqIndex = pair.indexOf('=');
+          if (eqIndex > 0) {
+            cookies.push({
+              name: pair.substring(0, eqIndex).trim(),
+              value: pair.substring(eqIndex + 1).trim(),
+              domain: context.domain,
+              path: '/'
+            });
+          }
+        }
+        if (cookies.length > 0) {
+          await page.setCookie.apply(page, cookies);
+        }
+      }
+    ` : ''
+
     const code = `
-      module.exports = async ({ page, context }) => {
-        const { url, maxScrolls, scrollDelay } = context;
+      module.exports = async function(args) {
+        var page = args.page;
+        var context = args.context;
+        var url = context.url;
+        var maxScrolls = context.maxScrolls;
+        var scrollDelay = context.scrollDelay;
 
         ${stealthSetup}
+        ${cookieSetup}
         await page.setViewport({ width: 1280, height: 800 });
 
         await page.goto(url, {
@@ -250,15 +323,15 @@ export async function renderWithScroll(
         });
 
         // 滚动加载
-        for (let i = 0; i < maxScrolls; i++) {
-          await page.evaluate(() => {
+        for (var i = 0; i < maxScrolls; i++) {
+          await page.evaluate(function() {
             window.scrollTo(0, document.body.scrollHeight);
           });
-          await new Promise(r => setTimeout(r, scrollDelay));
+          await new Promise(function(r) { setTimeout(r, scrollDelay); });
         }
 
         // 回到顶部
-        await page.evaluate(() => window.scrollTo(0, 0));
+        await page.evaluate(function() { window.scrollTo(0, 0); });
 
         return { data: await page.content(), type: 'text/html' };
       };
@@ -271,7 +344,7 @@ export async function renderWithScroll(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         code,
-        context: { url, maxScrolls, scrollDelay }
+        context: { url, domain, maxScrolls, scrollDelay, cookie: cfg.cookie }
       }),
       signal: AbortSignal.timeout(totalTimeout)
     })
@@ -319,6 +392,8 @@ export async function fetchFullTextWithBrowserless(
 
   try {
     // 解析 HTML
+    // console.log('Browserless 渲染完成，开始正文提取:', url)
+    // console.log('获取结果 html:', renderResult.html)
     const dom = new JSDOM(renderResult.html, { url })
     const document = dom.window.document
 

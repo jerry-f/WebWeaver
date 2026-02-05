@@ -24,11 +24,11 @@ let subscriber: IORedis | null = null
  * 任务类型枚举
  */
 export const TASK_TYPES = {
-  FETCH: 'FETCH',
-  SUMMARIZE: 'SUMMARIZE',
-  PUSH: 'PUSH',
-  CLEANUP: 'CLEANUP',
-  REFRESH_CREDENTIALS: 'REFRESH_CREDENTIALS'
+  FETCH: 'FETCH', // 抓取信息源
+  SUMMARIZE: 'SUMMARIZE', // 内容摘要
+  PUSH: 'PUSH', // 推送更新
+  CLEANUP: 'CLEANUP', // 清理过期数据
+  REFRESH_CREDENTIALS: 'REFRESH_CREDENTIALS' // 刷新凭据
 } as const
 
 export type TaskType = (typeof TASK_TYPES)[keyof typeof TASK_TYPES]
@@ -117,19 +117,17 @@ function scheduleTask(task: { id: string; name: string; type: string; schedule: 
           break
 
         case TASK_TYPES.FETCH:
-          // 触发所有信息源的抓取
-          console.log(`[Scheduler] 开始抓取所有信息源...`)
-          const results = await fetchAllSources()
-          const totalAdded = results.reduce((sum, r) => sum + r.added, 0)
-          const totalQueued = results.reduce((sum, r) => sum + r.queued, 0)
-          console.log(`[Scheduler] 抓取完成: 新增 ${totalAdded} 篇文章, 队列 ${totalQueued} 个任务`)
+          // 触发所有信息源的抓取（异步入队）
+          console.log(`[Scheduler] 开始将所有信息源加入抓取队列...`)
+          const fetchResult = await fetchAllSources()
+          console.log(`[Scheduler] 已将 ${fetchResult.jobIds.length} 个信息源加入抓取队列`)
 
           // 记录任务日志
           await prisma.taskLog.create({
             data: {
               taskId: task.id,
               status: 'success',
-              message: `抓取完成: 新增 ${totalAdded} 篇, 队列 ${totalQueued} 个任务`,
+              message: `已将 ${fetchResult.jobIds.length} 个信息源加入抓取队列`,
               duration: 0
             }
           })
@@ -281,12 +279,10 @@ export async function triggerTask(taskId: string): Promise<void> {
       break
 
     case TASK_TYPES.FETCH:
-      // 手动触发抓取
+      // 手动触发抓取（异步入队）
       console.log(`[Scheduler] 手动触发抓取所有信息源...`)
-      fetchAllSources().then(results => {
-        const totalAdded = results.reduce((sum, r) => sum + r.added, 0)
-        const totalQueued = results.reduce((sum, r) => sum + r.queued, 0)
-        console.log(`[Scheduler] 手动抓取完成: 新增 ${totalAdded} 篇文章, 队列 ${totalQueued} 个任务`)
+      fetchAllSources().then(result => {
+        console.log(`[Scheduler] 已将 ${result.jobIds.length} 个信息源加入抓取队列`)
       }).catch(err => {
         console.error(`[Scheduler] 手动抓取失败:`, err)
       })
