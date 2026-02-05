@@ -52,15 +52,15 @@ if (!existsSync(OUTPUT_DIR)) {
 const TEST_PAGES = [
   // 技术博客
   { name: 'linear-blog', url: 'https://linear.app/blog' },
-  // // 新闻网站
-  // { name: 'arstechnica', url: 'https://arstechnica.com/' },
-  // // 产品页面
-  // { name: 'notion', url: 'https://www.notion.so/' },
-  // { name: 'linear', url: 'https://linear.app/' },
-  // // 个人博客/文章
-  // { name: 'paul-graham', url: 'http://paulgraham.com/articles.html' },
-  // { name: 'overreacted', url: 'https://overreacted.io/' },
-  // { name: 'leerob', url: 'https://leerob.io/' },
+  // 新闻网站
+  { name: 'arstechnica', url: 'https://arstechnica.com/' },
+  // 产品页面
+  { name: 'notion', url: 'https://www.notion.so/' },
+  { name: 'linear', url: 'https://linear.app/' },
+  // 个人博客/文章
+  { name: 'paul-graham', url: 'http://paulgraham.com/articles.html' },
+  { name: 'overreacted', url: 'https://overreacted.io/' },
+  { name: 'leerob', url: 'https://leerob.io/' },
 ]
 
 // ============================================================================
@@ -116,7 +116,7 @@ async function testPage(page: { name: string; url: string }): Promise<TestResult
     })
 
     // 2. 提取内容
-    const extracted = extractFullContent(html, page.url, true)
+    const extracted = extractFullContent(html, page.url, false) // false 不生成测试文件
 
     result.success = extracted.success
     result.title = extracted.title

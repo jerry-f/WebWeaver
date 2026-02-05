@@ -12,7 +12,8 @@
 import { writeFileSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { JSDOM } from 'jsdom'
-import {sanitizeHtml} from '../../src/lib/fetchers/processors/html-sanitizer'
+
+// import {sanitizeHtml} from '../../src/lib/fetchers/processors/html-sanitizer'
 
 const OUTPUT_DIR = join(process.cwd(), 'scripts/browserless/output')
 
