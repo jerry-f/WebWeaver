@@ -103,10 +103,11 @@ const DEFAULT_REMOVE_SELECTORS = [
  * 从 Readability 提取的内容中获取根元素选择器
  *
  * 策略：
- * 1. 先使用所有属性（tagName + id + class + data-*）构建最精确的选择器
- * 2. 在源 DOM 中验证唯一性
- * 3. 如果不唯一，通过子元素特征进一步筛选
- * 4. 逐步降级直到找到唯一匹配
+ * 1. 不使用 tagName（因为 Readability 可能修改元素标签名）
+ * 2. 使用 id + class + data-* 属性构建选择器
+ * 3. 在源 DOM 中验证唯一性
+ * 4. 如果不唯一，通过子元素特征进一步筛选
+ * 5. 逐步降级直到找到唯一匹配
  */
 export function extractRootSelector(contentHtml: string, sourceDoc?: Document): string | null {
   const dom = new JSDOM(contentHtml)
@@ -119,38 +120,45 @@ export function extractRootSelector(contentHtml: string, sourceDoc?: Document): 
   if (!rootElement) return null
 
   /**
-   * 构建选择器：尽可能使用所有属性
+   * 获取元素的有效 class 列表
+   */
+  function getValidClasses(el: Element): string[] {
+    const classList = el.getAttribute('class')
+    if (!classList) return []
+    return classList
+      .split(/\s+/)
+      .filter((c) => c.length > 0 && !c.includes('[') && !c.includes(']') && !c.includes(':') && !c.includes('/'))
+  }
+
+  /**
+   * 获取元素的 data-* 属性
+   */
+  function getDataAttrs(el: Element): Attr[] {
+    return Array.from(el.attributes).filter(
+      (attr) => attr.name.startsWith('data-') && attr.value && !attr.value.includes('"') && !attr.value.includes("'"),
+    )
+  }
+
+  /**
+   * 构建选择器：不使用 tagName，只用 id + class + data-* 属性
    */
   function buildSelector(el: Element): string {
     const parts: string[] = []
 
-    // 1. 标签名
-    const tagName = el.tagName.toLowerCase()
-    parts.push(tagName)
-
-    // 2. id
+    // 1. id（最可靠）
     const id = el.getAttribute('id')
     if (id && id !== 'readability-page-1') {
       parts.push(`#${id}`)
     }
 
-    // 3. 所有 class
-    const classList = el.getAttribute('class')
-    if (classList) {
-      const classes = classList.split(/\s+/).filter((c) => c.length > 0)
-      // 过滤掉可能导致选择器语法错误的 class
-      const validClasses = classes.filter(
-        (c) => !c.includes('[') && !c.includes(']') && !c.includes(':') && !c.includes('/'),
-      )
-      if (validClasses.length > 0) {
-        parts.push(validClasses.map((c) => `.${c}`).join(''))
-      }
+    // 2. 所有有效 class
+    const validClasses = getValidClasses(el)
+    if (validClasses.length > 0) {
+      parts.push(validClasses.map((c) => `.${c}`).join(''))
     }
 
-    // 4. data-* 属性
-    const dataAttrs = Array.from(el.attributes).filter(
-      (attr) => attr.name.startsWith('data-') && attr.value && !attr.value.includes('"') && !attr.value.includes("'"),
-    )
+    // 3. data-* 属性
+    const dataAttrs = getDataAttrs(el)
     for (const attr of dataAttrs) {
       parts.push(`[${attr.name}="${attr.value}"]`)
     }
@@ -162,7 +170,7 @@ export function extractRootSelector(contentHtml: string, sourceDoc?: Document): 
    * 验证选择器在源 DOM 中的匹配数量
    */
   function countMatches(selector: string): number {
-    if (!sourceDoc) return -1
+    if (!sourceDoc || !selector) return -1
     try {
       return sourceDoc.querySelectorAll(selector).length
     } catch {
@@ -171,24 +179,33 @@ export function extractRootSelector(contentHtml: string, sourceDoc?: Document): 
   }
 
   /**
-   * 获取元素的第一个有意义的子元素特征
+   * 获取元素的第一个有意义的子元素特征（不使用 tagName）
    */
   function getChildSelector(el: Element): string | null {
     const firstChild = el.firstElementChild
     if (!firstChild) return null
 
-    const tagName = firstChild.tagName.toLowerCase()
+    // 优先使用 id
     const id = firstChild.getAttribute('id')
-    const firstClass = firstChild.getAttribute('class')?.split(/\s+/)[0]
+    if (id) return ` > #${id}`
 
-    if (id) return ` > ${tagName}#${id}`
-    if (firstClass && !firstClass.includes('[') && !firstClass.includes(':')) {
-      return ` > ${tagName}.${firstClass}`
+    // 其次使用第一个有效 class
+    const validClasses = getValidClasses(firstChild)
+    if (validClasses.length > 0) {
+      return ` > .${validClasses[0]}`
     }
-    return ` > ${tagName}`
+
+    // 使用 data-* 属性
+    const dataAttrs = getDataAttrs(firstChild)
+    if (dataAttrs.length > 0) {
+      const attr = dataAttrs[0]
+      return ` > [${attr.name}="${attr.value}"]`
+    }
+
+    return null
   }
 
-  // 步骤 1: 构建完整选择器
+  // 步骤 1: 构建完整选择器（不含 tagName）
   const fullSelector = buildSelector(rootElement)
   let matchCount = countMatches(fullSelector)
 
@@ -209,6 +226,7 @@ export function extractRootSelector(contentHtml: string, sourceDoc?: Document): 
 
     // 2.2 id + 子元素特征
     const childSelector = getChildSelector(rootElement)
+    console.log('id + 子元素特征:', idSelector, childSelector)
     if (childSelector) {
       const idWithChild = `${idSelector}${childSelector}`
       matchCount = countMatches(idWithChild)
@@ -218,73 +236,66 @@ export function extractRootSelector(contentHtml: string, sourceDoc?: Document): 
     }
   }
 
-  // 2.3 tagName + 有效 class
-  const classList = rootElement.getAttribute('class')
-  if (classList) {
-    const tagName = rootElement.tagName.toLowerCase()
-    const validClasses = classList
-      .split(/\s+/)
-      .filter((c) => c.length > 0 && !c.includes('[') && !c.includes(']') && !c.includes(':') && !c.includes('/'))
+  // 2.3 只用有效 class
+  const validClasses = getValidClasses(rootElement)
+  if (validClasses.length > 0) {
+    const classSelector = validClasses.map((c) => `.${c}`).join('')
+    matchCount = countMatches(classSelector)
+    if (matchCount === 1) {
+      return classSelector
+    }
 
-    if (validClasses.length > 0) {
-      const classSelector = `${tagName}${validClasses.map((c) => `.${c}`).join('')}`
-      matchCount = countMatches(classSelector)
+    // 2.4 class + 子元素特征
+    const childSelector = getChildSelector(rootElement)
+    console.log('class + 子元素特征:', classSelector, childSelector)
+    if (childSelector && matchCount > 1) {
+      const classWithChild = `${classSelector}${childSelector}`
+      matchCount = countMatches(classWithChild)
       if (matchCount === 1) {
-        return classSelector
+        return classWithChild
       }
+    }
 
-      // 2.4 class + 子元素特征
-      const childSelector = getChildSelector(rootElement)
-      if (childSelector && matchCount > 1) {
-        const classWithChild = `${classSelector}${childSelector}`
-        matchCount = countMatches(classWithChild)
-        if (matchCount === 1) {
-          return classWithChild
-        }
-      }
-
-      // 2.5 逐步减少 class 数量
-      for (let i = validClasses.length - 1; i >= 1; i--) {
-        const partialSelector = `${tagName}${validClasses
-          .slice(0, i)
-          .map((c) => `.${c}`)
-          .join('')}`
-        matchCount = countMatches(partialSelector)
-        if (matchCount === 1) {
-          return partialSelector
-        }
+    // 2.5 逐步减少 class 数量
+    for (let i = validClasses.length - 1; i >= 1; i--) {
+      const partialSelector = validClasses
+        .slice(0, i)
+        .map((c) => `.${c}`)
+        .join('')
+      matchCount = countMatches(partialSelector)
+      if (matchCount === 1) {
+        return partialSelector
       }
     }
   }
 
   // 步骤 3: 使用 data 属性
-  const dataAttrs = Array.from(rootElement.attributes).filter(
-    (attr) => attr.name.startsWith('data-') && attr.value && !attr.value.includes('"') && !attr.value.includes("'"),
-  )
+  const dataAttrs = getDataAttrs(rootElement)
   if (dataAttrs.length > 0) {
-    const tagName = rootElement.tagName.toLowerCase()
     const attr = dataAttrs[0]
-    const dataSelector = `${tagName}[${attr.name}="${attr.value}"]`
+    const dataSelector = `[${attr.name}="${attr.value}"]`
     matchCount = countMatches(dataSelector)
     if (matchCount === 1) {
       return dataSelector
     }
   }
 
-  // 步骤 4: 兜底
+  // 步骤 4: 兜底 - 返回最可能有效的选择器
   if (id && id !== 'readability-page-1') {
     return `#${id}`
   }
 
-  if (classList) {
-    const tagName = rootElement.tagName.toLowerCase()
-    const firstValidClass = classList.split(/\s+/).find((c) => c.length > 0 && !c.includes('[') && !c.includes(':'))
-    if (firstValidClass) {
-      return `${tagName}.${firstValidClass}`
-    }
+  if (validClasses.length > 0) {
+    return `.${validClasses[0]}`
   }
 
-  return rootElement.tagName.toLowerCase()
+  if (dataAttrs.length > 0) {
+    const attr = dataAttrs[0]
+    return `[${attr.name}="${attr.value}"]`
+  }
+
+  // 无法构建有效选择器
+  return null
 }
 
 // ============================================================================
