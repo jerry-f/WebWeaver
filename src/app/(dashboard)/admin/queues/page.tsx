@@ -27,9 +27,11 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
+  Wifi,
+  WifiOff,
 } from 'lucide-react'
-
-// 队列信息类型
+import { useSocketContext } from '@/contexts/socket-context'
+import type { ServerMessage, JobStatusPayload } from '@/lib/websocket/types'
 interface QueueInfo {
   key: string
   name: string
@@ -137,6 +139,9 @@ export default function QueuesPage() {
   // 操作状态
   const [operating, setOperating] = useState<string | null>(null)
 
+  // 使用全局 Socket Context
+  const socket = useSocketContext()
+
   // 获取队列状态
   const fetchQueues = useCallback(async () => {
     try {
@@ -225,6 +230,85 @@ export default function QueuesPage() {
       console.error('获取任务进度失败:', err)
     }
   }, [])
+
+  // 注册 WebSocket 事件监听
+  useEffect(() => {
+    // 监听任务状态事件
+    const unsubscribeJobStatus = socket.onJobStatus((data: ServerMessage<JobStatusPayload>) => {
+      const { type } = data
+      const payload = data.payload
+
+      if (type === 'job:started') {
+        console.log('[WS] 任务开始:', payload.jobId)
+        // 添加到进度列表
+        setJobProgress(prev => {
+          const existing = prev.find(p => p.jobId === payload.jobId)
+          if (existing) return prev
+          return [...prev, {
+            jobId: payload.jobId,
+            sourceId: payload.sourceId || '',
+            type: payload.jobType as JobProgress['type'],
+            status: 'started',
+            timestamp: data.timestamp
+          }]
+        })
+        // 刷新活跃任务
+        fetchActiveJobs()
+      } else if (type === 'job:progress') {
+        console.log('[WS] 任务进度:', payload.jobId, payload.progress)
+        // 更新进度
+        setJobProgress(prev => prev.map(p =>
+          p.jobId === payload.jobId
+            ? { ...p, status: 'progress', progress: payload.progress }
+            : p
+        ))
+      } else if (type === 'job:completed') {
+        console.log('[WS] 任务完成:', payload.jobId)
+        // 更新进度状态
+        setJobProgress(prev => prev.map(p =>
+          p.jobId === payload.jobId
+            ? { ...p, status: 'completed', progress: payload.progress }
+            : p
+        ))
+        // 3秒后移除已完成的任务
+        setTimeout(() => {
+          setJobProgress(prev => prev.filter(p => p.jobId !== payload.jobId))
+        }, 3000)
+        // 刷新队列状态
+        fetchQueues()
+        fetchActiveJobs()
+      } else if (type === 'job:failed') {
+        console.log('[WS] 任务失败:', payload.jobId, payload.error)
+        // 更新进度状态
+        setJobProgress(prev => prev.map(p =>
+          p.jobId === payload.jobId
+            ? { ...p, status: 'failed', error: payload.error }
+            : p
+        ))
+        // 5秒后移除
+        setTimeout(() => {
+          setJobProgress(prev => prev.filter(p => p.jobId !== payload.jobId))
+        }, 5000)
+        // 刷新队列和失败任务
+        fetchQueues()
+        fetchFailedJobs(selectedQueue)
+      }
+    })
+
+    return () => {
+      unsubscribeJobStatus()
+    }
+  }, [socket, fetchQueues, fetchActiveJobs, fetchFailedJobs, selectedQueue])
+
+  // 连接成功后订阅频道并拉取最新状态
+  useEffect(() => {
+    if (socket.isConnected) {
+      console.log('[WS] 已连接，订阅任务状态')
+      socket.subscribe(['job:status', 'queue:stats'])
+      fetchQueues()
+      fetchJobProgress()
+    }
+  }, [socket.isConnected, socket.subscribe, fetchQueues, fetchJobProgress])
 
   // 初始化和自动刷新
   useEffect(() => {
@@ -414,6 +498,30 @@ export default function QueuesPage() {
           )}
         </div>
         <div className="flex items-center gap-2">
+          {/* WebSocket 状态 */}
+          <Button
+            variant={socket.isConnected ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => socket.isConnected ? socket.disconnect() : socket.connect()}
+            className={socket.isConnected ? 'bg-green-600 hover:bg-green-700' : ''}
+          >
+            {socket.isConnected ? (
+              <>
+                <Wifi className="h-4 w-4 mr-1" />
+                实时连接
+              </>
+            ) : socket.status === 'connecting' || socket.status === 'reconnecting' ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                连接中...
+              </>
+            ) : (
+              <>
+                <WifiOff className="h-4 w-4 mr-1" />
+                离线
+              </>
+            )}
+          </Button>
           <Button
             variant="outline"
             size="sm"
@@ -430,6 +538,8 @@ export default function QueuesPage() {
             variant={autoRefresh ? 'default' : 'outline'}
             size="sm"
             onClick={() => setAutoRefresh(!autoRefresh)}
+            disabled={socket.isConnected} // WebSocket 连接时禁用轮询
+            title={socket.isConnected ? '已启用实时更新，无需轮询' : ''}
           >
             {autoRefresh ? (
               <>
@@ -664,25 +774,45 @@ export default function QueuesPage() {
                     执行中 ({activeJobs.length})
                   </h4>
                   <div className="space-y-2">
-                    {activeJobs.slice(0, 10).map((job) => (
-                      <div key={job.id} className="flex items-center justify-between px-3 py-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Loader2 className="h-4 w-4 text-blue-500 animate-spin flex-shrink-0" />
-                          <code className="text-xs font-mono truncate">{job.id}</code>
+                    {activeJobs.slice(0, 10).map((job) => {
+                      const jobData = job.data as { url?: string; articleId?: string; sourceId?: string }
+                      return (
+                        <div key={job.id} className="px-3 py-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Loader2 className="h-4 w-4 text-blue-500 animate-spin flex-shrink-0" />
+                              <Badge variant="outline" className="text-xs">
+                                {(job as JobInfo & { queueKey?: string }).queueKey === 'sourceFetch' ? '源抓取' :
+                                 (job as JobInfo & { queueKey?: string }).queueKey === 'fetch' ? '文章抓取' :
+                                 (job as JobInfo & { queueKey?: string }).queueKey === 'summary' ? 'AI摘要' : '任务'}
+                              </Badge>
+                              <span className="text-xs text-muted-foreground">
+                                重试 {job.attemptsMade}/3
+                              </span>
+                            </div>
+                            <span className="text-xs text-muted-foreground">{formatRelativeTime(job.timestamp)}</span>
+                          </div>
+                          {/* 任务详情 */}
+                          <div className="text-xs space-y-1">
+                            {jobData.url && (
+                              <p className="text-muted-foreground truncate" title={jobData.url}>
+                                <span className="font-medium">URL:</span> {jobData.url}
+                              </p>
+                            )}
+                            {jobData.articleId && (
+                              <p className="text-muted-foreground">
+                                <span className="font-medium">文章ID:</span> <code className="bg-muted px-1 rounded">{jobData.articleId.slice(0, 20)}...</code>
+                              </p>
+                            )}
+                            {jobData.sourceId && (
+                              <p className="text-muted-foreground">
+                                <span className="font-medium">源ID:</span> <code className="bg-muted px-1 rounded">{jobData.sourceId.slice(0, 20)}...</code>
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>{formatRelativeTime(job.timestamp)}</span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2"
-                            onClick={() => handleViewJobDetail((job as JobInfo & { queueKey?: string }).queueKey || 'fetch', job.id)}
-                          >
-                            详情
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
               )}
@@ -695,25 +825,42 @@ export default function QueuesPage() {
                     等待中 ({waitingJobs.length})
                   </h4>
                   <div className="space-y-2">
-                    {waitingJobs.slice(0, 10).map((job) => (
-                      <div key={job.id} className="flex items-center justify-between px-3 py-2 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
-                        <div className="flex items-center gap-2 min-w-0">
-                          <Clock className="h-4 w-4 text-orange-500 flex-shrink-0" />
-                          <code className="text-xs font-mono truncate">{job.id}</code>
+                    {waitingJobs.slice(0, 10).map((job) => {
+                      const jobData = job.data as { url?: string; articleId?: string; sourceId?: string }
+                      return (
+                        <div key={job.id} className="px-3 py-3 bg-orange-50 dark:bg-orange-900/20 rounded-lg border border-orange-200 dark:border-orange-800">
+                          <div className="flex items-center justify-between mb-2">
+                            <div className="flex items-center gap-2">
+                              <Clock className="h-4 w-4 text-orange-500 flex-shrink-0" />
+                              <Badge variant="outline" className="text-xs">
+                                {(job as JobInfo & { queueKey?: string }).queueKey === 'sourceFetch' ? '源抓取' :
+                                 (job as JobInfo & { queueKey?: string }).queueKey === 'fetch' ? '文章抓取' :
+                                 (job as JobInfo & { queueKey?: string }).queueKey === 'summary' ? 'AI摘要' : '任务'}
+                              </Badge>
+                            </div>
+                            <span className="text-xs text-muted-foreground">{formatRelativeTime(job.timestamp)}</span>
+                          </div>
+                          {/* 任务详情 */}
+                          <div className="text-xs space-y-1">
+                            {jobData.url && (
+                              <p className="text-muted-foreground truncate" title={jobData.url}>
+                                <span className="font-medium">URL:</span> {jobData.url}
+                              </p>
+                            )}
+                            {jobData.articleId && (
+                              <p className="text-muted-foreground">
+                                <span className="font-medium">文章ID:</span> <code className="bg-muted px-1 rounded">{jobData.articleId.slice(0, 20)}...</code>
+                              </p>
+                            )}
+                            {jobData.sourceId && (
+                              <p className="text-muted-foreground">
+                                <span className="font-medium">源ID:</span> <code className="bg-muted px-1 rounded">{jobData.sourceId.slice(0, 20)}...</code>
+                              </p>
+                            )}
+                          </div>
                         </div>
-                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                          <span>{formatRelativeTime(job.timestamp)}</span>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-6 px-2"
-                            onClick={() => handleViewJobDetail((job as JobInfo & { queueKey?: string }).queueKey || 'fetch', job.id)}
-                          >
-                            详情
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
+                      )
+                    })}
                     {waitingJobs.length > 10 && (
                       <p className="text-xs text-muted-foreground text-center">
                         还有 {waitingJobs.length - 10} 个任务等待中...

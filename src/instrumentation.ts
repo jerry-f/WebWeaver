@@ -9,8 +9,9 @@
 
 export async function register() {
   // 仅在 Node.js 运行时执行（排除 Edge Runtime）
-  if (process.env.NEXT_RUNTIME === 'nodejs') {
-    const { initApp } = await import('./lib/init')
-    await initApp()
-  }
+  // if (process.env.NEXT_RUNTIME === 'nodejs') {
+  //   const { initApp } = await import('./lib/init')
+  //   console.log('hello initApp')
+  //   await initApp()
+  // }
 }

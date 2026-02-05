@@ -136,7 +136,10 @@ func (s *ScraperServer) fetchRawContent(ctx context.Context, req *pb.FetchReques
 		strategy = req.Options.Strategy
 	}
 
-	if strategy != "" {
+	// 优先使用 Headers（支持 Cookie 认证）
+	if req.Options != nil && len(req.Options.Headers) > 0 {
+		fetchResult = s.fetcher.FetchWithHeaders(ctx, req.Url, req.Options.Headers)
+	} else if strategy != "" {
 		fetchResult = s.fetcher.FetchWithStrategy(ctx, req.Url, strategy)
 	} else if req.Options != nil && req.Options.Referer != "" {
 		fetchResult = s.fetcher.FetchWithReferer(ctx, req.Url, req.Options.Referer)
@@ -149,6 +152,10 @@ func (s *ScraperServer) fetchRawContent(ctx context.Context, req *pb.FetchReques
 
 	if fetchResult.Error != nil {
 		resp.Error = fetchResult.Error.Error()
+		// 尝试提取 HTTP 状态码
+		if httpErr, ok := fetchResult.Error.(*fetcher.HTTPError); ok {
+			resp.StatusCode = int32(httpErr.StatusCode)
+		}
 		return resp
 	}
 
@@ -180,7 +187,10 @@ func (s *ScraperServer) fetchAndExtract(ctx context.Context, req *pb.FetchReques
 		strategy = req.Options.Strategy
 	}
 
-	if strategy != "" {
+	// 优先使用 Headers（支持 Cookie 认证）
+	if req.Options != nil && len(req.Options.Headers) > 0 {
+		fetchResult = s.fetcher.FetchWithHeaders(ctx, req.Url, req.Options.Headers)
+	} else if strategy != "" {
 		fetchResult = s.fetcher.FetchWithStrategy(ctx, req.Url, strategy)
 	} else if req.Options != nil && req.Options.Referer != "" {
 		fetchResult = s.fetcher.FetchWithReferer(ctx, req.Url, req.Options.Referer)

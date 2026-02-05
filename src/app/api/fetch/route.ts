@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { fetchAllSources, fetchSource } from "@/lib/fetchers";
 
-// 触发抓取
+// 触发抓取（异步入队）
 export async function POST(req: Request) {
   try {
     const session = await auth();
@@ -12,29 +12,22 @@ export async function POST(req: Request) {
 
     const { sourceId } = await req.json().catch(() => ({}));
 
-    let results;
     if (sourceId) {
       // 抓取单个源
       const result = await fetchSource(sourceId);
-      results = [result];
+      return NextResponse.json({
+        message: `已将信息源加入抓取队列`,
+        jobId: result.jobId,
+      });
     } else {
       // 抓取所有源
-      results = await fetchAllSources();
+      const result = await fetchAllSources();
+      return NextResponse.json({
+        message: `已将 ${result.jobIds.length} 个信息源加入抓取队列`,
+        jobIds: result.jobIds,
+        count: result.jobIds.length,
+      });
     }
-
-    const totalNew = results.reduce((sum, r) => sum + r.added, 0);
-    const errors = results.filter((r) => r.errors.length > 0);
-
-    return NextResponse.json({
-      message: `抓取完成，共获取 ${totalNew} 篇新文章`,
-      results,
-      summary: {
-        total: results.length,
-        success: results.length - errors.length,
-        failed: errors.length,
-        newArticles: totalNew,
-      },
-    });
   } catch (error) {
     console.error("Fetch error:", error);
     return NextResponse.json(
