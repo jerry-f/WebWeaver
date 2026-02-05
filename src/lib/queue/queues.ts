@@ -18,6 +18,8 @@ export interface FetchJobData {
   url: string
   /** 信息源 ID */
   sourceId: string
+  /** 信息源类型（用于判断是否更新标题等） */
+  sourceType?: string
   /** 抓取策略 */
   strategy?: FetchStrategy
   /** 优先级 (1-10, 1 最高) */

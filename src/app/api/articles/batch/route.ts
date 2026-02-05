@@ -162,7 +162,7 @@ async function batchForceRefresh(articleIds: string[]) {
       id: true,
       url: true,
       sourceId: true,
-      source: { select: { config: true } }
+      source: { select: { config: true, type: true } }
     }
   })
 
@@ -192,6 +192,7 @@ async function batchForceRefresh(articleIds: string[]) {
       articleId: a.id,
       url: a.url!,
       sourceId: a.sourceId,
+      sourceType: a.source?.type,
       strategy: sourceStrategyMap.get(a.sourceId)
     }))
 

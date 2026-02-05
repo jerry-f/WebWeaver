@@ -441,6 +441,7 @@ export async function triggerContentFetch(
           articleId: a.id,
           url: a.url!,
           sourceId,
+          sourceType: 'sitecrawl',
           strategy
         }))
 
@@ -568,6 +569,7 @@ export async function triggerContentFetch(
           articleId: a.id,
           url: a.url!,
           sourceId,
+          sourceType: 'sitecrawl',
           strategy
         }))
 

@@ -53,3 +53,9 @@ prisma.\$queryRaw\`SELECT name, type FROM pragma_table_info('Article')\`.then(r 
 }).finally(() => prisma.\$disconnect());
 "
 ```
+
+## db:generate
+需要执行 db:generate, 因为 schema.prisma 有更新，比如新增了枚举类型 ArticleContentStatus
+```bash
+npx prisma generate
+```

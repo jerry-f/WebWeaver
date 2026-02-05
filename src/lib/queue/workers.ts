@@ -49,7 +49,7 @@ const DEFAULT_CONFIG: WorkerConfig = {
  * 集成域名调度器进行限速和熔断保护
  */
 async function processFetchJob(job: Job<FetchJobData>): Promise<void> {
-  const { articleId, url, sourceId, strategy } = job.data
+  const { articleId, url, sourceId, strategy, sourceType } = job.data
   const domain = extractDomainFromUrl(url)
   const jobId = `fetch_${articleId}_${Date.now()}`
 
@@ -102,10 +102,10 @@ async function processFetchJob(job: Job<FetchJobData>): Promise<void> {
           fetchStrategy: result.strategy,
           fetchDuration: result.duration
       }
-      // TODO: 需要判断文章的类型， 如果文章是 sitecrawl 源抓取任务， 则更新标题
-      // if( result.title ){
-      //   updateInfo['title'] = result.title
-      // }
+      // sitecrawl 类型的源需要从抓取结果更新标题
+      if (sourceType === 'sitecrawl' && result.title) {
+        updateInfo['title'] = result.title
+      }
       await prisma.article.update({
         where: { id: articleId },
         data: updateInfo
@@ -426,6 +426,7 @@ async function processSourceFetchJob(job: Job<SourceFetchJobData>): Promise<void
           articleId: a.id,
           url: a.url,
           sourceId: source.id,
+          sourceType: source.type,
           strategy: fetchConfig.strategy
         }))
       )
