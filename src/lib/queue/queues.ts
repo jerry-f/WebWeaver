@@ -74,9 +74,10 @@ export const QUEUE_NAMES = {
   SOURCE_FETCH: 'newsflow-source-fetch',
   // 第二层：文章级别任务
   FETCH: 'newsflow-fetch',
+  // 第三层：辅助任务
   SUMMARY: 'newsflow-summary',
   IMAGE: 'newsflow-image',
-  // 辅助任务
+  // 凭证任务
   CREDENTIAL: 'newsflow-credential',
 } as const
 

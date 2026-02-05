@@ -328,13 +328,16 @@ async function testQueue(): Promise<boolean> {
 
   try {
     // 动态导入队列模块
-    const { getFetchQueue, addFetchJob, getQueueStats } = await import('../src/lib/queue/queues')
+    const { getFetchQueue, addFetchJob, getSummaryQueue } = await import('../src/lib/queue/queues')
 
     // 获取队列状态
     info('获取队列状态...')
-    const stats = await getQueueStats()
-    success(`抓取队列: waiting=${stats.fetch.waiting}, active=${stats.fetch.active}, completed=${stats.fetch.completed}`)
-    success(`摘要队列: waiting=${stats.summary.waiting}, active=${stats.summary.active}`)
+    const fetchQueue = getFetchQueue()
+    const summaryQueue = getSummaryQueue()
+    const fetchCounts = await fetchQueue.getJobCounts()
+    const summaryCounts = await summaryQueue.getJobCounts()
+    success(`抓取队列: waiting=${fetchCounts.waiting}, active=${fetchCounts.active}, completed=${fetchCounts.completed}`)
+    success(`摘要队列: waiting=${summaryCounts.waiting}, active=${summaryCounts.active}`)
 
     // 添加测试任务
     info('添加测试任务...')
@@ -349,8 +352,8 @@ async function testQueue(): Promise<boolean> {
 
     // 等待片刻检查状态
     await new Promise(r => setTimeout(r, 1000))
-    const newStats = await getQueueStats()
-    info(`更新后队列状态: waiting=${newStats.fetch.waiting}`)
+    const newCounts = await fetchQueue.getJobCounts()
+    info(`更新后队列状态: waiting=${newCounts.waiting}`)
 
     return true
   } catch (e: any) {
