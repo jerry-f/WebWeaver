@@ -115,7 +115,7 @@ async function processFetchJob(job: Job<FetchJobData>): Promise<void> {
       domainScheduler.reportSuccess(domain)
 
       // 6. 将文章加入 AI 摘要队列(TODO: 这里可能需要添加到独立的摘要队列）)
-      queueArticleForSummary(articleId)
+      // queueArticleForSummary(articleId)
 
       // 发布完成状态
       await publishJobStatus({

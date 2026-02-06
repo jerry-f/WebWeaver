@@ -8,6 +8,7 @@ import ArticleCompare from '@/components/article-compare'
 import ArticleSidebar from './components/article-sidebar'
 import ArticleToolbar from './components/article-toolbar'
 import ArticleContent from './components/article-content'
+import RefreshConfigDialog, { type RefreshConfig } from './components/refresh-config-dialog'
 import { ReadingThemeProvider } from '@/contexts/reading-theme-context'
 
 interface Source {
@@ -59,6 +60,7 @@ export default function ArticleDetailPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(-1)
   const [refreshing, setRefreshing] = useState(false)
+  const [refreshDialogOpen, setRefreshDialogOpen] = useState(false)
   const [compareData, setCompareData] = useState<{
     oldVersion: ArticleVersion;
     newVersion: ArticleVersion;
@@ -162,11 +164,25 @@ export default function ArticleDetailPage() {
   }, [article])
 
   // 刷新文章内容（重新抓取并对比，不更新数据库）
-  const refreshArticle = useCallback(async () => {
+  const refreshArticle = useCallback(async (config?: RefreshConfig) => {
     if (!article || refreshing) return
     setRefreshing(true)
+    setRefreshDialogOpen(false)
     try {
-      const res = await fetch(`/api/articles/${article.id}/refresh`, { method: 'POST' })
+      // 构建请求参数
+      const body: Record<string, string> = {}
+      if (config?.strategy) {
+        body.strategy = config.strategy
+      }
+      if (config?.parseMode) {
+        body.parseMode = config.parseMode
+      }
+
+      const res = await fetch(`/api/articles/${article.id}/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      })
       if (res.ok) {
         const data = await res.json()
         if (data.success) {
@@ -183,6 +199,11 @@ export default function ArticleDetailPage() {
       setRefreshing(false)
     }
   }, [article, refreshing])
+
+  // 打开刷新配置对话框
+  const openRefreshDialog = useCallback(() => {
+    setRefreshDialogOpen(true)
+  }, [])
 
   // 确认更新文章（用户在对比视图中点击确认后调用）
   const confirmUpdate = useCallback(async () => {
@@ -255,7 +276,7 @@ export default function ArticleDetailPage() {
           break
         case 'r':
           e.preventDefault()
-          refreshArticle()
+          openRefreshDialog()
           break
         case 'j':
           e.preventDefault()
@@ -274,7 +295,7 @@ export default function ArticleDetailPage() {
 
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [article, goBack, toggleRead, toggleStarred, goNext, goPrev, refreshArticle])
+  }, [article, goBack, toggleRead, toggleStarred, goNext, goPrev, openRefreshDialog])
 
   // 滚动到当前文章
   useEffect(() => {
@@ -304,6 +325,14 @@ export default function ArticleDetailPage() {
 
   return (
     <>
+      {/* 刷新配置对话框 */}
+      <RefreshConfigDialog
+        open={refreshDialogOpen}
+        onClose={() => setRefreshDialogOpen(false)}
+        onConfirm={refreshArticle}
+        loading={refreshing}
+      />
+
       {/* 对比视图 */}
       {compareData && (
         <ArticleCompare
@@ -341,7 +370,7 @@ export default function ArticleDetailPage() {
             onToggleStarred={toggleStarred}
             onToggleRead={toggleRead}
             onOpenOriginal={() => window.open(article.url, '_blank')}
-            onRefresh={refreshArticle}
+            onRefresh={openRefreshDialog}
             onGoPrev={goPrev}
             onGoNext={goNext}
           />

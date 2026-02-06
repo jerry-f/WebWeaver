@@ -12,6 +12,9 @@ import { GrpcClientAdapter, type IScraperClient } from './clients/scraper-adapte
 import { CredentialManager } from '../auth/credential-manager'
 import { fetchFullText, type FullTextResult } from './fulltext'
 import { fetchFullTextWithBrowserless, renderPage, checkBrowserlessHealth } from './clients/browserless'
+import { preprocessHtml } from './processors/html-preprocessor'
+import { markdownToHtml } from './processors/markdown-converter'
+import { extractContentWithAI } from '../ai/content-extractor'
 import type { FetchStrategy } from './types'
 
 /**
@@ -125,6 +128,15 @@ export class UnifiedFetcher {
 
     if (strategy === 'local') {
       result = await this.fetchLocal(url, options, authenticated)
+    } else if (strategy === 'ai') {
+      // 使用 AI 提取内容
+      result = await this.fetchWithAI(url, options, authenticated)
+
+      // AI 失败时回退到本地
+      if (!result.success) {
+        console.log(`[UnifiedFetcher] AI 提取失败，回退到本地抓取: ${url}`)
+        result = await this.fetchLocal(url, options, authenticated)
+      }
     } else if (strategy === 'browserless') {
       // 使用 Browserless 浏览器渲染（用于 SPA 页面）
       result = await this.fetchWithBrowserless(url, options, authenticated, headers['Cookie'])
@@ -303,6 +315,86 @@ export class UnifiedFetcher {
         success: false,
         strategy: 'browserless',
         duration: 0,
+        authenticated,
+        error: error instanceof Error ? error.message : String(error)
+      }
+    }
+  }
+
+  /**
+   * 使用 AI 提取内容
+   *
+   * 流程：Go Scraper 获取 HTML → 预处理 → AI 提取 Markdown → 转换为 HTML
+   */
+  private async fetchWithAI(
+    url: string,
+    options: UnifiedFetchOptions,
+    authenticated: boolean
+  ): Promise<UnifiedFetchResult> {
+    const start = Date.now()
+
+    try {
+      // 第一步：使用 Go Scraper 获取原始 HTML
+      const rawResult = await this.fetchRaw(url, {
+        ...options,
+        strategy: 'go'
+      })
+
+      if (!rawResult.success || !rawResult.body) {
+        return {
+          success: false,
+          strategy: 'ai',
+          duration: Date.now() - start,
+          authenticated,
+          error: rawResult.error || '获取原始 HTML 失败'
+        }
+      }
+
+      // 第二步：预处理 HTML（仅移除 script 标签）
+      const { html: preprocessedHtml } = preprocessHtml(rawResult.body, {
+        baseUrl: url
+      })
+
+      // 第三步：调用 AI 提取
+      const aiResult = await extractContentWithAI(preprocessedHtml, url, {
+        timeout: options.timeout || 60000
+      })
+
+      if (!aiResult || !aiResult.markdown) {
+        return {
+          success: false,
+          strategy: 'ai',
+          duration: Date.now() - start,
+          authenticated,
+          error: 'AI 提取失败'
+        }
+      }
+
+      // 第四步：Markdown 转 HTML
+      const htmlContent = markdownToHtml(aiResult.markdown, {
+        baseUrl: url,
+        gfm: true,
+        breaks: true
+      })
+
+      return {
+        success: true,
+        finalUrl: rawResult.finalUrl,
+        title: aiResult.title,
+        content: htmlContent,
+        textContent: aiResult.markdown, // 保留 Markdown 用于搜索
+        excerpt: aiResult.excerpt,
+        byline: aiResult.author,
+        strategy: 'ai',
+        duration: Date.now() - start,
+        authenticated
+      }
+    } catch (error) {
+      console.error('[UnifiedFetcher] AI extraction error:', error)
+      return {
+        success: false,
+        strategy: 'ai',
+        duration: Date.now() - start,
         authenticated,
         error: error instanceof Error ? error.message : String(error)
       }

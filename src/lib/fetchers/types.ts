@@ -5,7 +5,7 @@
  * - browserless: 强制使用浏览器渲染
  * - local: 强制使用本地抓取
  */
-export type FetchStrategy = 'auto' | 'go' | 'browserless' | 'local'
+export type FetchStrategy = 'auto' | 'go' | 'browserless' | 'local' | 'ai'
 
 /**
  * 抓取到的文章数据结构

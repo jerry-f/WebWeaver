@@ -13,10 +13,21 @@ import type { FetchStrategy } from '@/lib/fetchers/types'
  * 用户确认后才通过 /confirm 接口更新数据库
  */
 export async function POST(
-  _req: NextRequest,
+  req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
+
+  // 解析请求体，获取用户选择的策略
+  let requestStrategy: FetchStrategy | undefined
+  try {
+    const body = await req.json()
+    if (body.strategy) {
+      requestStrategy = body.strategy as FetchStrategy
+    }
+  } catch {
+    // 没有请求体或解析失败，使用默认策略
+  }
 
   // 获取原文章
   const article = await prisma.article.findUnique({
@@ -77,8 +88,13 @@ export async function POST(
           sourceId: article.sourceId || undefined
         }
 
-        // 从 source.config.fetch.strategy 获取抓取策略
-        if (article.source?.config) {
+        // 优先使用用户请求的策略
+        if (requestStrategy) {
+          fetchOptions.strategy = requestStrategy
+          console.log(`[refresh] 使用用户选择的抓取策略: ${fetchOptions.strategy}`)
+        }
+        // 否则从 source.config.fetch.strategy 获取抓取策略
+        else if (article.source?.config) {
           try {
             const config = JSON.parse(article.source.config)
             if (config.fetch?.strategy) {
@@ -115,12 +131,13 @@ export async function POST(
     let newCategory: string | null = article.source?.category || null
 
     if (isAIEnabled() && newContent) {
-      const summaryResult = await generateSummary(newTitle, newContent)
-      if (summaryResult) {
-        newSummary = summaryResult.summary
-        newTags = JSON.stringify(summaryResult.tags)
-        newCategory = summaryResult.category
-      }
+      // 调用 AI 生成摘要(TODO: 后续打开)
+      // const summaryResult = await generateSummary(newTitle, newContent)
+      // if (summaryResult) {
+      //   newSummary = summaryResult.summary
+      //   newTags = JSON.stringify(summaryResult.tags)
+      //   newCategory = summaryResult.category
+      // }
     }
 
     // 构建新版本数据（不更新数据库）
